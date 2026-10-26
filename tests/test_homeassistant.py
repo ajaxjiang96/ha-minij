@@ -485,3 +485,21 @@ async def test_rejected_new_session_aborts_without_retry(hass, api, sms_api):
     assert len(hass.config_entries.async_entries("minij")) == 0
     sms_api[0].assert_awaited_once()
     sms_api[1].assert_awaited_once()
+
+
+@pytest.mark.parametrize("language", ["en", "zh-Hans"])
+async def test_authentication_translations_load_through_homeassistant(hass, language):
+    """Check the exact backend resources used for menus and input labels."""
+    from homeassistant.helpers.translation import async_get_translations
+
+    strings = await async_get_translations(hass, language, "config", {"minij"})
+    prefix = "component.minij.config.step."
+    for step in ("user", "reauth_confirm", "reconfigure"):
+        for method in ("phone", "token"):
+            assert strings[f"{prefix}{step}.menu_options.{method}"].strip()
+    for step, field in (("phone", "phone"), ("sms", "code"), ("token", "token")):
+        assert strings[f"{prefix}{step}.title"].strip()
+        assert strings[f"{prefix}{step}.description"].strip()
+        assert strings[f"{prefix}{step}.data.{field}"].strip()
+    assert "not supported yet" not in strings[f"{prefix}user.description"]
+    assert "暂不支持" not in strings[f"{prefix}user.description"]

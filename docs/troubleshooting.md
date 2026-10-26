@@ -32,6 +32,26 @@ later. A cloud outage is separate from a rejected session. MiniJ error
 `MJ01201018` means missing/invalid request headers in the observed response;
 it is not an established token-expiration code.
 
+## Blank labels or old login instructions after an update
+
+If the new SMS flow shows blank menu rows, a raw `code` label, or the old
+"SMS login is not supported" description, first close the flow and refresh
+the HA browser with **Cmd+Shift+R** on macOS (Ctrl+Shift+R on Windows/Linux).
+Reopen the flow; do not request another SMS just to test the labels.
+
+If the old text persists, verify that the entire integration folder was
+replaced, including `translations/en.json` and `translations/zh-Hans.json`,
+then restart Home Assistant and refresh the browser again. The current files
+contain menu labels for both methods and a translated SMS-code field. A
+private browser window can distinguish a browser cache problem from stale
+server files without deleting browser data or changing the HA config entry.
+
+Home Assistant's [translation documentation](https://contributors.home-assistant.io/core/integrations/translations/)
+recommends restarting HA and clearing the browser cache when translation
+changes do not appear. The automated suite verifies these exact English and
+Chinese keys through HA's real translation loader; this is backend evidence,
+not proof of the browser's currently cached resources.
+
 ## Device values
 
 The integration reports controller values. Idle program/process fields may
