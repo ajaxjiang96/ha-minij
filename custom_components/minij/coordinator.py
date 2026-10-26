@@ -7,10 +7,12 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import MinijAuthError, MinijClient, MinijError
 from .const import DOMAIN
+from .device import device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,4 +42,17 @@ class MinijCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             raise ConfigEntryAuthFailed("MiniJ rejected the session token") from err
         except MinijError as err:
             raise UpdateFailed("Unable to fetch MiniJ device status") from err
-        return {str(device["deviceId"]): device for device in devices}
+        registry = dr.async_get(self.hass)
+        for device in devices:
+            device_id = device["deviceId"]
+            if registered := registry.async_get_device_by_identifier(
+                (DOMAIN, device_id), self.config_entry.entry_id
+            ):
+                info = device_info(device_id, device)
+                registry.async_update_device(
+                    registered.id,
+                    name=info["name"],
+                    model=info["model"],
+                    sw_version=info["sw_version"],
+                )
+        return {device["deviceId"]: device for device in devices}

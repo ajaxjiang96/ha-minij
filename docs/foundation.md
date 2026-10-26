@@ -25,7 +25,10 @@
 [诊断 PR #5](https://github.com/ajaxjiang96/ha-minij/pull/5) 提供诊断和日常周期观察能力。
 PR 检查通过与实际合并是不同状态，发布前重新查询。
 
-目前尚未发布版本标签。合并不等于发布，也不等于 HACS 默认列表收录。
+首个测试版 [v0.1.1b1](https://github.com/ajaxjiang96/ha-minij/releases/tag/v0.1.1b1)
+已发布，标签对应合并提交 `489c35d`，验证和发布任务全部通过。已实际下载核对
+ZIP 的 SHA-256 和 14 个包内文件，均与标签一致。所有者确认已由 HACS 安装；
+这不等于 HACS 默认列表收录。
 
 ## Linux 与凭据提示
 

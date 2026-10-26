@@ -5,8 +5,8 @@ from typing import Any
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
 from .coordinator import MinijCoordinator
+from .device import device_info
 
 
 class MinijEntity(CoordinatorEntity[MinijCoordinator]):
@@ -19,19 +19,11 @@ class MinijEntity(CoordinatorEntity[MinijCoordinator]):
         super().__init__(coordinator, context=device_id)
         self.device_id = device_id
         self._attr_unique_id = f"{device_id}_{key}"
-        device = coordinator.data[device_id]
-        firmware = " ".join(
-            str(device[key])
-            for key in ("wifiVersion", "firmwareVersion")
-            if device.get(key)
-        )
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, device_id)},
-            manufacturer="MiniJ",
-            model=device.get("deviceModel"),
-            name=device.get("deviceNickName") or device.get("deviceName") or "MiniJ",
-            sw_version=firmware or None,
-        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Expose the current report instead of a metadata snapshot from setup."""
+        return device_info(self.device_id, self.device)
 
     @property
     def device(self) -> dict[str, Any]:
