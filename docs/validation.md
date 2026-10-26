@@ -1,6 +1,17 @@
 # Validation — 2026-10-26
 
-Test runtime: Home Assistant 2026.10.4, CPython 3.14.8 on macOS ARM64.
+Test runtimes: Home Assistant 2026.10.4 with CPython 3.14.8 on macOS ARM64
+and CPython 3.14.9 in the verified official Python Linux ARM64 image.
+
+## Linux result
+
+All **16 tests pass with process exit 0** on Linux ARM64, following successful
+Ruff lint and format checks. The host-downloaded official image was verified
+against its manifest/config/layer digests before import and execution. Only
+authored component source, synthetic tests, configuration, and requirements
+were mounted read-only. No credentials, private captures, or analysis files
+were mounted. The test runner propagated pytest's exit status without masking
+failures. Log: ignored `analysis/linux-tests.log`.
 
 ## Live appliance → Home Assistant
 
@@ -29,8 +40,9 @@ The initial combined run reports **16 passed** before the same shutdown crash (e
 
 The live one-entry smoke test exits cleanly. No production workaround or forced process exit was added to conceal the separate test teardown failure.
 
-Linux CI is configured but unexecuted. Local Docker image transfers fail with
-TLS timeouts/EOF, so no Linux pass is claimed. See [foundation.md](foundation.md).
+Linux CI is configured. Local Linux validation now passes after the proxy
+recovered; hosted HACS/hassfest and test results are checked separately.
+See [foundation.md](foundation.md).
 
 ## Coverage limits
 

@@ -11,7 +11,7 @@ The prototype already works on the user's Home Assistant installation. The next 
 - Current entities: status, reported program, reported process, child lock, and cloud control authorization.
 - Existing firmware baseline: Wi-Fi `1.0253`, device firmware `0 0003 1 0000`. No update has been installed by the agent.
 - Authentication uses an app session token extracted from local logs. SMS type `login` is now confirmed; token lifetime/renewal remain unknown.
-- Twelve transport tests exit successfully. Four HA runtime tests pass assertions but the test process crashes on shutdown; a built-in-HA-only baseline reproduces it. The live MiniJ HA smoke process exits successfully.
+- All 16 tests now pass with exit 0 on Linux ARM64. The earlier macOS-only finalization failure and its built-in-HA baseline remain documented. The live MiniJ HA smoke process also exits successfully.
 - Local Git, MIT license, CI configuration, HACS metadata, maintainer, and the user-supplied brand icon are prepared. The public repository is created; validation and PR status are recorded in [foundation status](foundation.md).
 
 The current `0.1.0` manifest/ZIP identifies a local prototype; it is not an existing public release.

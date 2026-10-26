@@ -42,6 +42,10 @@ daemon. Only component source, synthetic tests, test configuration, and test
 requirements are mounted read-only; private analysis and account files are excluded.
 The actual test result is recorded in [validation.md](validation.md).
 
+The complete Linux command exited 0: Home Assistant 2026.10.4, Python 3.14.9,
+Ruff lint/format, and all 16 tests passed. The earlier macOS finalization
+failure did not reproduce in this Linux run.
+
 The first public image pull invoked Docker's existing credential helper and
 was cancelled. Subsequent probes used an isolated configuration containing
 only `{}`, with no credentials or helpers. No password was entered and the
