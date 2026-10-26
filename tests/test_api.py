@@ -21,9 +21,13 @@ async def service(unused_tcp_port, monkeypatch):
     routes = web.RouteTableDef()
     state = {"status": 200, "body": {"success": True, "data": []}, "requests": []}
 
-    @routes.get("/api/{route:.*}")
+    @routes.route("*", "/api/{route:.*}")
     async def handle(request):
         state["requests"].append(request)
+        if request.method == "POST":
+            state["request_body"] = await request.json()
+        if "raw_body" in state:
+            return web.Response(text=state["raw_body"], content_type="application/json")
         return web.json_response(state["body"], status=state["status"])
 
     app = web.Application()
@@ -108,3 +112,116 @@ async def test_redirect_is_not_followed_with_session_credentials(service):
     with pytest.raises(api.MinijError, match="HTTP 302"):
         await client.async_get_devices()
     assert len(state["requests"]) == 1
+
+
+async def test_sms_request_uses_login_type_without_existing_token(service):
+    client, state = service
+    state["body"]["data"] = None
+    assert await client.async_request_sms(" 13800000000 ") is None
+    request = state["requests"][0]
+    assert request.method == "POST"
+    assert request.path == "/api/captcha/sendSmsCaptcha"
+    assert request.headers["Content-Type"] == "application/json"
+    assert request.headers["platform"] == "WEBSITE"
+    assert request.headers["version"] == "1.3.0"
+    assert "token" not in request.headers
+    assert state["request_body"] == {"phone": "13800000000", "type": "login"}
+    assert len(state["requests"]) == 1
+
+
+async def test_sms_login_returns_only_token_and_does_not_mutate_client(service):
+    client, state = service
+    state["body"]["data"] = {
+        "token": " new-session ",
+        "phone": "13800000000",
+        "userId": "account-001",
+    }
+    assert await client.async_login("13800000000", " 012345 ") == "new-session"
+    request = state["requests"][0]
+    assert request.path == "/api/login/loginByPhone"
+    assert request.method == "POST"
+    assert "token" not in request.headers
+    assert state["request_body"] == {"phone": "13800000000", "captcha": "012345"}
+    state["body"]["data"] = []
+    await client.async_get_devices()
+    assert state["requests"][-1].headers["token"] == "test-token"
+
+
+@pytest.mark.parametrize("data", [None, [], {}, {"token": 1}, {"token": " "}])
+async def test_login_requires_a_nonempty_string_token(service, data):
+    client, state = service
+    state["body"]["data"] = data
+    with pytest.raises(api.MinijLoginError):
+        await client.async_login("13800000000", "012345")
+
+
+@pytest.mark.parametrize("data", [{"challenge": "private-challenge"}, [], "private", 1])
+async def test_unexpected_sms_payload_is_not_treated_as_delivery(service, data):
+    client, state = service
+    state["body"]["data"] = data
+    with pytest.raises(api.MinijLoginError):
+        await client.async_request_sms("13800000000")
+
+
+@pytest.mark.parametrize("operation", ["sms", "login"])
+@pytest.mark.parametrize("status", [200, 401, 403, 429, 503, 302])
+async def test_login_errors_are_typed_private_and_never_retried(
+    service, operation, status, caplog
+):
+    client, state = service
+    state["status"] = status
+    state["body"] = {
+        "success": False,
+        "errorCode": "unknown-private-code",
+        "errorMessage": "private-phone-13800000000-code-012345",
+        "data": {"token": "private-response-token"},
+    }
+    expected = (
+        api.MinijRateLimitError
+        if status == 429
+        else api.MinijLoginError
+        if status in (200, 401, 403)
+        else api.MinijError
+    )
+    with pytest.raises(expected) as error:
+        if operation == "sms":
+            await client.async_request_sms("13800000000")
+        else:
+            await client.async_login("13800000000", "012345")
+    assert len(state["requests"]) == 1
+    for secret in ("13800000000", "012345", "private", "test-token"):
+        assert secret not in str(error.value)
+        assert secret not in caplog.text
+    assert not isinstance(error.value, api.MinijAuthError)
+
+
+async def test_malformed_login_json_is_a_connection_response_failure(service):
+    client, state = service
+    state["raw_body"] = "{private broken response"
+    with pytest.raises(api.MinijError) as error:
+        await client.async_login("13800000000", "012345")
+    assert not isinstance(error.value, api.MinijLoginError)
+    assert "private" not in str(error.value)
+    assert error.value.__suppress_context__
+
+
+@pytest.mark.parametrize("phone,code", [("", "012345"), ("13800000000", " ")])
+async def test_missing_login_input_never_sends_a_request(service, phone, code):
+    client, state = service
+    with pytest.raises(api.MinijLoginError):
+        await client.async_login(phone, code)
+    assert state["requests"] == []
+
+
+async def test_sms_boolean_acknowledgement_is_accepted(service):
+    client, state = service
+    state["body"]["data"] = True
+    await client.async_request_sms("13800000000")
+    assert len(state["requests"]) == 1
+
+
+async def test_missing_sms_phone_never_sends_a_request(service):
+    client, state = service
+    with pytest.raises(api.MinijLoginError):
+        await client.async_request_sms(" ")
+    assert state["requests"] == []

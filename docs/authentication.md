@@ -34,3 +34,26 @@ The request schemas and login SMS type are now established. Before treating an S
 For further passive app evidence, use the existing app PID (`adb -s emulator-5554 shell pidof -s com.minij.app`) and a bounded read-only `adb -s emulator-5554 logcat -d --pid=<current PID> -v threadtime`. Do not clear logcat, restart/clear the app, or log out just to obtain a new trace. Save raw output only under ignored `analysis/runtime/`; extract only route, field names, nonsecret enum constants, response status/error codes, and timestamps into reports. If a real user-triggered login is later needed, have the user operate the login UI and enter the SMS code; never include that code in recorded public fixtures.
 
 For expiry, observe a naturally occurring authentication failure during an authorized read, retaining the HTTP status and MiniJ error code without exposing the token. Then verify the reauthentication flow with explicit user participation. Do not invent a token lifetime, refresh endpoint, automatic login retry, or expiry error mapping from the present evidence.
+
+## Experimental integration flow
+
+The integration now implements the captured request schemas with the existing
+WEBSITE headers. It offers SMS and advanced token entry for both setup and
+reauthentication. No real SMS/login was made during implementation. HTTP 429
+has a dedicated rate-limit message; no cooldown duration, expiry code, or
+refresh endpoint is invented. Unknown business rejection/challenge responses
+stop setup. Unauthenticated POSTs omit any existing account token, prohibit
+redirects, and never retry automatically.
+
+A login token is validated through profile and bound-device reads before it is
+saved. The stable user ID prevents duplicate accounts and different-account
+reauthentication. Temporary read failures after code exchange retain the token
+only in the active flow so Retry does not consume the code a second time.
+Phone and code are not persisted. Existing entries need no data migration:
+they continue to contain only the same session-token field.
+
+Live acceptance still requires the account owner to submit their number and
+code in the HA forms, confirm device visibility, and check the existing app
+session afterward. Do not mark SMS compatibility, session rotation, expiry,
+or renewal verified based only on fixture tests. Never deliberately revoke
+or log out the existing session to manufacture an expiry observation.

@@ -3,36 +3,85 @@
     "step": {
       "user": {
         "title": "连接小吉",
-        "description": "输入已登录小吉 App 的会话令牌。本集成读取设备状态，暂不支持手机号或短信登录。",
-        "data": {"token": "会话令牌"}
+        "description": "选择登录方式。手机验证码登录为实验功能，尚待真实账号验证。",
+        "menu_options": {
+          "phone": "手机验证码（实验功能）",
+          "token": "已有会话令牌（高级）"
+        }
       },
       "reauth_confirm": {
         "title": "重新连接小吉",
-        "description": "输入同一个小吉账号的新会话令牌。",
-        "data": {"token": "会话令牌"}
+        "description": "请登录原来的小吉账号。设备和实体设置将会保留。",
+        "menu_options": {
+          "phone": "手机验证码（实验功能）",
+          "token": "已有会话令牌（高级）"
+        }
+      },
+      "phone": {
+        "title": "获取小吉登录验证码",
+        "description": "输入已有小吉账号的中国大陆手机号（11 位，不带 +86）。提交将发送一条短信。新登录可能影响 App 会话，此行为尚未验证。不会自动发送短信。",
+        "data": {
+          "phone": "手机号"
+        }
+      },
+      "sms": {
+        "title": "输入短信验证码",
+        "description": "输入小吉发来的验证码。提交将尝试兑换一次会话。如需更换号码或重新获取短信，请取消后重新开始，避免重复请求。",
+        "data": {
+          "code": "短信验证码"
+        }
+      },
+      "validate": {
+        "title": "验证小吉账号访问权限",
+        "description": "验证码已被接受。点击重试以检查账号和设备访问权限，不会再次发送短信或兑换验证码。"
+      },
+      "token": {
+        "title": "使用小吉会话令牌",
+        "description": "输入自己已登录小吉账号的会话令牌。重新认证时必须使用原来的账号。",
+        "data": {
+          "token": "会话令牌"
+        }
       }
     },
     "error": {
-      "invalid_auth": "小吉拒绝了此会话令牌。",
+      "invalid_auth": "小吉拒绝了此会话，请重新开始登录。",
       "cannot_connect": "无法连接小吉，请稍后重试。",
       "invalid_response": "小吉未返回有效的账号标识。",
-      "no_devices": "此小吉账号尚未绑定设备。",
-      "wrong_account": "此令牌属于另一个小吉账号。"
+      "no_devices": "此账号没有绑定设备。请先在小吉 App 中绑定设备，再重试。",
+      "invalid_phone": "请输入不带国家代码的 11 位中国大陆手机号。",
+      "invalid_code": "请输入短信中的数字验证码。",
+      "rate_limited": "小吉限制了请求频率，请等待后再试。服务端的冷却时间尚不明确。",
+      "sms_rejected": "小吉未确认受支持的短信响应，短信可能已经发出。请勿重复请求；如需 App 验证，请使用会话令牌方式。",
+      "sms_uncertain": "无法确认短信请求的结果，短信可能已经发出。请检查短信，等待后再试。",
+      "login_rejected": "小吉拒绝了登录，或需要尚未支持的验证步骤。请检查短信验证码；如需 App 验证，请使用会话令牌方式。",
+      "login_uncertain": "无法确认登录结果，未自动重试。请等待后再试。"
     },
     "abort": {
       "already_configured": "此小吉账号已配置。",
-      "reauth_successful": "已更新小吉登录信息。"
+      "reauth_successful": "小吉认证已更新。",
+      "wrong_account": "此次登录属于其他小吉账号。请重新开始认证并使用原来的账号。",
+      "invalid_auth": "小吉拒绝了新会话，请重新开始登录。"
     }
   },
   "entity": {
     "sensor": {
-      "status": {"name": "状态"},
-      "reported_program": {"name": "设备上报程序"},
-      "reported_process": {"name": "设备上报进程"}
+      "status": {
+        "name": "状态"
+      },
+      "reported_program": {
+        "name": "设备上报程序"
+      },
+      "reported_process": {
+        "name": "设备上报进程"
+      }
     },
     "binary_sensor": {
-      "child_lock": {"name": "童锁已开启"},
-      "cloud_control_authorized": {"name": "云端控制已授权"}
+      "child_lock": {
+        "name": "童锁已开启"
+      },
+      "cloud_control_authorized": {
+        "name": "云端控制已授权"
+      }
     }
   }
 }
