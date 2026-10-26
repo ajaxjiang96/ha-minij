@@ -257,3 +257,79 @@ async def test_rate_limit_http_date(service):
     with pytest.raises(api.MinijRateLimitError) as error:
         await client.async_get_devices()
     assert 3590 < error.value.retry_after <= 3600
+
+
+def notification_record(identifier="message-test", **overrides):
+    return {
+        "id": identifier,
+        "deviceId": "washer-test",
+        "type": "DEVICE_NOTIFICATION",
+        "title": "洗衣完成",
+        "pushTime": "2026-01-01 12:00:00",
+        "content": "private-device-name-and-program",
+        **overrides,
+    }
+
+
+async def test_notification_post_is_authenticated_read_without_side_effects(service):
+    client, state = service
+    state["body"]["data"] = {
+        "content": [
+            notification_record(),
+            notification_record("clean", title="清洁完成"),
+            notification_record("fault", title="故障提醒"),
+            notification_record(
+                "reminder", title="清洁提醒", content="已经完成118次任务"
+            ),
+            notification_record("future", title="Future notification"),
+        ]
+    }
+    records = await client.async_get_notifications("washer-test")
+    assert [record.event_type for record in records] == [
+        "wash_completed",
+        "cleaning_completed",
+        "fault_reported",
+        None,
+        None,
+    ]
+    assert "private-device-name" not in repr(records)
+    assert state["request_body"] == {
+        "type": "DEVICE_NOTIFICATION",
+        "deviceId": "washer-test",
+    }
+    assert len(state["requests"]) == 1
+    request = state["requests"][0]
+    assert request.method == "POST"
+    assert request.path == "/api/notificationCenter/findByPage"
+    assert request.headers["token"] == "test-token"
+
+
+@pytest.mark.parametrize("status", [401, 403])
+async def test_notification_auth_rejection_is_not_sms_login_failure(service, status):
+    client, state = service
+    state["status"] = status
+    with pytest.raises(api.MinijAuthError):
+        await client.async_get_notifications("washer-test")
+    assert len(state["requests"]) == 1
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        [],
+        {},
+        {"content": None},
+        {"content": [None]},
+        {"content": [notification_record(id="")]},
+        {"content": [notification_record(deviceId="other-device")]},
+        {"content": [notification_record(type="SYSTEM")]},
+        {"content": [notification_record(pushTime="bad-date")]},
+        {"content": [notification_record(pushTime=None)]},
+        {"content": [notification_record(), notification_record()]},
+    ],
+)
+async def test_invalid_notification_page_cannot_advance_cursor(service, data):
+    client, state = service
+    state["body"]["data"] = data
+    with pytest.raises(api.MinijError):
+        await client.async_get_notifications("washer-test")
