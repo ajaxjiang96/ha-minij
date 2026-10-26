@@ -1,0 +1,12 @@
+alias: 小吉上报进入工作状态
+triggers:
+  - trigger: state
+    entity_id: sensor.replace_with_your_minij_status
+    from: "resting"
+    to: "working"
+actions:
+  - action: persistent_notification.create
+    data:
+      title: 小吉状态变化
+      message: 小吉云端上报从空闲变为工作状态，请以机器及 App 实际情况为准。
+mode: single

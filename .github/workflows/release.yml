@@ -1,4 +1,4 @@
-name: 发布测试版
+name: 发布版本
 
 on:
   push:
@@ -34,28 +34,13 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-          python - <<'PY'
-          import json
-          import os
-          import re
-          from pathlib import Path
-
-          version = json.loads(Path("custom_components/minij/manifest.json").read_text())["version"]
-          if not re.fullmatch(r"\d+\.\d+\.\d+b[1-9]\d*", version):
-              raise SystemExit("此流程仅发布 b1、b2 等测试版，不发布稳定版")
-          if os.environ["RELEASE_TAG"] != f"v{version}":
-              raise SystemExit("标签必须与 manifest 版本一致")
-          if not Path(f"docs/releases/{version}.md").is_file():
-              raise SystemExit("缺少对应版本的中文发布说明")
-          with open(os.environ["GITHUB_ENV"], "a") as output:
-              output.write(f"RELEASE_VERSION={version}\n")
-          PY
+          python scripts/prepare_release.py
       - name: 生成手动安装包和校验文件
         run: |
           python scripts/package_integration.py
           cd dist
           sha256sum ha-minij-*.zip > SHA256SUMS
-      - name: 发布 GitHub 预发布版本
+      - name: 发布 GitHub 版本
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -63,6 +48,7 @@ jobs:
         run: |
           gh release create "$RELEASE_TAG" \
             "dist/ha-minij-${RELEASE_VERSION}.zip" dist/SHA256SUMS \
-            --verify-tag --prerelease --latest=false \
-            --title "小吉 MiniJ ${RELEASE_TAG} · 监测测试版" \
+            --verify-tag \
+            --prerelease="$RELEASE_PRERELEASE" --latest="$RELEASE_LATEST" \
+            --title "小吉 MiniJ ${RELEASE_TAG} · ${RELEASE_KIND}" \
             --notes-file "docs/releases/${RELEASE_VERSION}.md"
