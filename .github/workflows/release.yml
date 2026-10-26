@@ -1,0 +1,68 @@
+name: 发布测试版
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    uses: ./.github/workflows/validate.yml
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      - name: 确认主分支提交、版本与发布说明
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          version = json.loads(Path("custom_components/minij/manifest.json").read_text())["version"]
+          if not re.fullmatch(r"\d+\.\d+\.\d+b[1-9]\d*", version):
+              raise SystemExit("此流程仅发布 b1、b2 等测试版，不发布稳定版")
+          if os.environ["RELEASE_TAG"] != f"v{version}":
+              raise SystemExit("标签必须与 manifest 版本一致")
+          if not Path(f"docs/releases/{version}.md").is_file():
+              raise SystemExit("缺少对应版本的中文发布说明")
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"RELEASE_VERSION={version}\n")
+          PY
+      - name: 生成手动安装包和校验文件
+        run: |
+          python scripts/package_integration.py
+          cd dist
+          sha256sum ha-minij-*.zip > SHA256SUMS
+      - name: 发布 GitHub 预发布版本
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            "dist/ha-minij-${RELEASE_VERSION}.zip" dist/SHA256SUMS \
+            --verify-tag --prerelease --latest=false \
+            --title "小吉 MiniJ ${RELEASE_TAG} · 监测测试版" \
+            --notes-file "docs/releases/${RELEASE_VERSION}.md"
