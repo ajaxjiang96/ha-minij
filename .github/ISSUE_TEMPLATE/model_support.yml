@@ -1,39 +1,37 @@
-name: Model support report
-description: Report results for an additional MiniJ model or firmware.
+name: 型号支持反馈
+description: 反馈其他小吉型号或固件的验证结果。
 body:
   - type: input
     id: model
     attributes:
-      label: Public model and internal API model
+      label: 公开型号与内部 API 型号
     validations:
       required: true
   - type: input
     id: firmware
     attributes:
-      label: Device and Wi-Fi firmware versions
+      label: 设备与 Wi-Fi 固件版本
     validations:
       required: true
   - type: input
     id: versions
     attributes:
-      label: Integration and Home Assistant versions
+      label: 集成与 Home Assistant 版本
     validations:
       required: true
   - type: textarea
     id: observations
     attributes:
-      label: Observed states and behavior
+      label: 已观察的状态与行为
       description: >-
-        Explain which fields were verified against the app or appliance.
-        Successful installation alone does not verify all model capabilities.
+        说明哪些字段已与 App 或机器对照。安装成功不代表全部能力已验证。
     validations:
       required: true
   - type: textarea
     id: fixture
     attributes:
-      label: Minimal redacted example
+      label: 最小脱敏示例
       description: >-
-        Include only relevant status keys. Remove credentials, phone numbers,
-        account/device IDs, serials, network details, and personal names.
-        Do not upload raw account responses or APKs.
+        只提供相关状态字段，删除凭据、手机号、账号/设备 ID、序列号、网络信息和姓名。
+        不上传原始账号响应或 APK。
       render: json

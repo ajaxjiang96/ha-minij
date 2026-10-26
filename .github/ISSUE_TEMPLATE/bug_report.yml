@@ -1,40 +1,39 @@
-name: Bug report
-description: Report a problem with the MiniJ integration.
+name: 问题反馈
+description: 反馈小吉集成的使用问题。
 body:
   - type: markdown
     attributes:
       value: >-
-        Remove tokens, phone numbers, serial numbers, device/account IDs,
-        Wi-Fi names, IP addresses, and other private data before submitting.
-        Do not upload APKs or raw account/network captures.
+        提交前删除令牌、验证码、手机号、序列号、账号/设备 ID、Wi-Fi、IP 和其他隐私信息。
+        不上传 APK、原始账号响应或完整网络抓包。
   - type: input
     id: version
     attributes:
-      label: Integration version
+      label: 集成版本
     validations:
       required: true
   - type: input
     id: homeassistant
     attributes:
-      label: Home Assistant version and installation type
+      label: Home Assistant 版本与安装方式
     validations:
       required: true
   - type: input
     id: appliance
     attributes:
-      label: Appliance model and firmware versions
-      description: Include the public model and internal model if available.
+      label: 设备型号与固件版本
+      description: 如已知，请同时填写公开型号与内部型号。
     validations:
       required: true
   - type: textarea
     id: behavior
     attributes:
-      label: Expected and actual behavior
-      description: Include steps to reproduce and when the problem started.
+      label: 预期与实际行为
+      description: 说明复现步骤和首次出现时间。
     validations:
       required: true
   - type: textarea
     id: logs
     attributes:
-      label: Redacted error messages
+      label: 去除敏感信息的错误提示
       render: text

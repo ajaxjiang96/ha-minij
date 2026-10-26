@@ -1,76 +1,72 @@
-# Validate a normal washer cycle
+# 日常洗涤观察指南
 
-Goal: correlate the V6-XNB's physical behavior, MiniJ app display, and HA
-reported values before adding completion automations, remaining time, or a
-physical-offline indicator. Use a cycle you would normally run. Appliance
-operation and firmware decisions remain yours.
+目标是对照 V6-XNB 的实际运行、小吉 App 和 HA 上报值，逐步明确阶段和结束状态。
+**这不是继续试用监测预览版的前置条件。** 不必为验证额外运行洗涤，按日常使用补充即可。
+设备操作和固件更新由所有者决定。
 
-## Prepare
+## 已观察到什么
 
-Install the diagnostics development build, restart HA, and confirm the five
-existing entities remain. Do not delete/recreate the integration. Record your
-HA/integration versions and the washer's public model and firmware.
+同一型号与固件的三份诊断快照显示：
 
-In **Settings → Devices & services → MiniJ**, use the existing entry's
-three-dot menu → **Download diagnostics**. The export uses already-cached
-readings and does not poll, log in, send SMS, or control the washer. Normal
-polling remains once per minute. If the download option is absent, confirm
-the new `diagnostics.py` file was copied and restart HA.
+| 相对第一份的导出时间 | 状态别名 | 状态文字 | 程序 | 进程 |
+| --- | --- | --- | --- | --- |
+| 0 秒 | `resting` | 休息中 | 标准 | 脱水 |
+| 约 53 秒 | `working` | 工作中 | 筒自洁 | 主洗 |
+| 约 143 秒 | `resting` | 休息中 | 标准 | 主洗 |
 
-## Collect a small sequence
+三份记录的条目均已加载，最近一次云端刷新成功；设备均为 `minij.washer.x68`，
+Wi-Fi `1.0253`、固件 `0 0003 1 0000`，原始在线标志均为 `1`。
+导出时间不是设备切换状态的准确时间，快照也不保证与导出时刻同步刷新。
 
-At each observation, note your local time, physical/app behavior, and the
-HA status/program/process. Wait for the normal update if HA lags the app.
-Download one diagnostics snapshot at these useful points:
+这支持空闲、运行及回到空闲的上报能力，也表明空闲时仍可能保留“脱水”或“主洗”。
+它**不能单独证明正常完成**，因为没有对照正常完成、取消和停止的实际原因。
+程序回到“标准”也不能单独解释为复位或成功完成。
 
-| Point | What to compare |
+## 下载诊断
+
+安装包含 `diagnostics.py` 的开发构建并重启 HA，确认原来的五个实体仍在。
+在 **设置 → 设备与服务 → MiniJ** 的已有条目中选择 **⋮ → 下载诊断信息**。
+导出只使用缓存，不额外轮询、登录、发送短信或控制洗衣机，正常轮询仍为每分钟一次。
+找不到下载选项时，检查文件是否完整复制并重启 HA；无需删除条目。
+
+## 有正常使用机会时再记录
+
+在方便的几个节点记下本地时间、机器/App 行为和 HA 状态、程序、进程，并下载一次诊断：
+
+| 节点 | 对照内容 |
 | --- | --- |
-| Before start | Idle state; whether program/process describe the last cycle |
-| After your normal start | Status transition and active program |
-| A normal stage change | Reported process against the app's current stage |
-| Completion | Physical end/app completion against HA transition |
-| Several minutes after completion | Whether idle values clear or persist |
+| 启动前 | 空闲状态，程序和进程是否保留旧值 |
+| 日常启动后 | 进入运行的变化及实际程序 |
+| 自然阶段变化 | App 阶段与设备上报进程是否一致 |
+| App 明确显示完成时 | 实际结束原因与 HA 变化 |
+| 结束几分钟后 | 空闲字段是否清除或保留 |
 
-A pause/cancel observation is optional, only if you would normally use it.
-Do not create appliance faults, disconnect hardware, change firmware, trigger
-rate limits, or revoke account sessions to produce evidence. If an error
-naturally occurs, record its exact app message locally alongside the raw
-status alias. `device_exception` alone does not establish a fault cause.
+只有日常确实使用暂停/取消时才顺便记录。不要人为制造故障、断网、限流、会话失效或固件变化。
+自然出现异常时，先在本地记录 App 原文及状态别名；`device_exception` 不能单独解释故障原因。
 
-## Read the diagnostic snapshot correctly
+## 如何理解诊断内容
 
-The MiniJ `data` section contains:
+MiniJ 的 `data` 部分包含：
 
-- `captured_at`: UTC time of export, **not** the time the appliance changed
-  state or the cached cloud data was last fetched.
-- `entry_state`: HA's integration-entry lifecycle state.
-- `last_cloud_refresh_success`: whether the coordinator's last refresh
-  succeeded. False means cached values may be stale. Null means no coordinator
-  is available; it is not a physical-offline value.
-- `cached_devices`: model/type, firmware versions, the six allowlisted reported
-  text fields, and the integer `reported_online_status` flag when provided.
-  The flag is retained without interpreting its numeric values as online/offline.
+- `captured_at`：UTC 导出时间，不是状态变化时间或最近成功读取时间。
+- `entry_state`：HA 集成条目的加载状态。
+- `last_cloud_refresh_success`：最近一次刷新是否成功。`false` 表示缓存可能已陈旧；
+  `null` 表示当前没有协调器。它不是物理离线判断。
+- `cached_devices`：型号、类型、固件、六个白名单上报文字字段，以及存在时的整数
+  `reported_online_status`。在线标志暂不解释为物理在线/离线。
 
-No MiniJ token, phone, code, account/device identifier, serial, address, Wi-Fi
-credentials, nickname, or arbitrary nested API fields are copied into this
-section. Device records intentionally have no stable identifiers; do not infer
-that list order tracks the same device between exports. HA adds its own system,
-manifest, custom-integration, timing, and issue metadata around this section.
-Review that wrapper before sharing; you can share only the MiniJ `data` section
-and your public HA version if the extra system information is unnecessary.
-Do not upload raw app logs, profile responses, or full network captures.
+该部分不复制小吉令牌、手机号、验证码、账号/设备 ID、序列号、昵称或任意嵌套 API 字段。
+记录没有稳定设备标识，多设备时不能根据列表顺序认定是同一台机器。
+HA 会在外围添加系统、集成、耗时和问题等元数据，分享前请检查；
+如无必要，可仅提供 MiniJ 的 `data` 部分和公开的 HA 版本。
+不要上传原始 App 日志、账号响应或完整网络抓包。
 
-## Acceptance boundary
+## 当前交付边界
 
-A complete correlated cycle can establish candidate start/stage/end meanings
-for this model/firmware. Record observed aliases exactly, including unknowns;
-do not guess enum mappings. This implementation does not yet label a
-`working` → `resting` transition as successful completion: cancellation and
-fault behavior have not been distinguished. It exposes no remaining-time
-sensor or guessed physical-offline state.
+监测预览版可以继续推进，不因完整周期证据未齐而停工。
+仍保留原始别名，不把 `working → resting` 自动等同于成功完成，
+不提供猜测的完成通知、剩余时间或物理离线状态。
+正常使用中获得完整对照后，再新增这些能力。
 
-After a normal HA restart, confirm the saved session still loads without SMS
-and entity IDs/settings remain. Note whether the MiniJ app stayed signed in
-after your SMS test. Observe natural authentication failures over time;
-do not manufacture expiry. These results close the remaining session questions
-separately from cycle-state validation.
+会话验证单独进行：方便时重启 HA，确认不发短信也能恢复，并检查实体标识和设置。
+小吉 App 是否保持登录、自然发生的认证过期等，也按观察记录，不制造过期来测试。

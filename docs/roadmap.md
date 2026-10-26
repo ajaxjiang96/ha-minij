@@ -1,106 +1,91 @@
-# MiniJ Home Assistant Roadmap
+# 小吉 HA 集成路线图
 
-Updated 2026-10-26. Proposed release scope: an open-source, cloud-based, read-only integration that another V6-XNB owner can install, sign into, and use for dependable washer monitoring.
+更新于 2026-10-26。目标：先提供开源、可安装、可登录、可信的云端监测预览版，
+再按真实证据增加完成通知、剩余时间和控制。文档优先使用简体中文。
 
-The prototype already works on the user's Home Assistant installation. The next release should make that result reproducible for other users. Appliance controls follow after authentication and status semantics are established.
+## 当前可交付内容
 
-## Current baseline
+- V6-XNB / `minij.washer.x68` 已通过真实账号读取和用户 HA 使用验证。
+- 五个实体：状态、设备上报程序、设备上报进程、童锁、云端控制授权。
+- 手机验证码和高级令牌登录、同账号重新认证/重新配置已实现；所有者反馈短信流程可用。
+- 基础和短信 PR 已合并。短信分支 66 个测试通过 Linux CI，hassfest/HACS 通过。
+- 诊断和生命周期测试 PR 提供白名单缓存导出，覆盖云端故障恢复、多设备新增、移除及返回。
+- 三份快照确认 `resting → working → resting`；空闲时程序/进程可保留旧值。
+- 基线：Wi-Fi `1.0253`、固件 `0 0003 1 0000`。没有由代理安装固件更新。
+- 当前 `0.1.0` 为开发包版本，尚无公开版本标签或 HACS 默认列表收录。
 
-- V6-XNB, internal model `minij.washer.x68`, is verified with live cloud requests and Home Assistant entities.
-- The user's installed HA screenshot confirms five entities, a running program, and the observed transition `device_exception` → `working`. This does not establish the cause of the exception or a complete cycle lifecycle.
-- Current entities: status, reported program, reported process, child lock, and cloud control authorization.
-- Existing firmware baseline: Wi-Fi `1.0253`, device firmware `0 0003 1 0000`. No update has been installed by the agent.
-- Token setup is verified. Experimental phone/SMS setup and same-account reauthentication are implemented; the account owner reports the SMS flow works. Browser translation caching was observed; restart persistence, session rotation, and token lifetime/renewal remain unverified.
-- The merged SMS branch passed all 66 tests in hosted Linux CI (minimum/current HA), hassfest, and HACS. The earlier macOS-only finalization failure and its built-in-HA baseline remain documented. The live MiniJ HA smoke process also exits successfully.
-- Local Git, MIT license, CI configuration, HACS metadata, maintainer, and the user-supplied brand icon are prepared. The public repository is created; validation and PR status are recorded in [foundation status](foundation.md).
+## 交付判断
 
-The current `0.1.0` manifest/ZIP identifies a local prototype; it is not an existing public release.
+**可以继续推进监测预览版，无需再等一轮洗涤。** 已知限制写入文档，
+不把“正常完成”“物理离线”“剩余时间”和长期会话可靠性标记为已验证。
+不为补证据制造故障、反复请求短信或要求额外洗涤。
 
-## First public release contract
+## 第一层：开源与可重复验证
 
-A fresh user can install through a HACS custom repository, configure their own account without APK analysis or an emulator, see accurate supported status fields, and recover from restarts, cloud outages, and rejected sessions. Unknown device values remain unknown; stale data is not presented as a fresh appliance reading.
+- [x] 公开仓库 `ajaxjiang96/ha-minij`、MIT 许可证、贡献指南和问题模板。
+- [x] 排除 APK、厂商反编译代码、原始日志和账号数据。
+- [x] Linux CI：最低/当前 HA、真实 HTTP 传输及 HA 运行时测试、Ruff、hassfest、HACS、打包。
+- [x] 原创源码、实际仓库链接及用户提供的品牌图标已准备。
+- [x] 面向用户的主要文档、Issue 模板以简体中文为主，保留 HA 英文翻译资源。
 
-Initial verified support is **V6-XNB on the tested firmware**, with a documented minimum HA version and an explicit cloud dependency. Other models are unverified until evidence is contributed. The first release includes monitoring and the states needed for user-created HA automations. Program selection, start/pause/stop, firmware management, LAN control, and MQTT are later work.
+## 第二层：登录与会话
 
-## Milestone 1 Publishable source and repeatable validation
+- [x] 从成功 App 登录记录确认短信 `type: login` 和 JSON 结构。
+- [x] 仅显式提交才发送短信；验证码兑换后读取重试不重复兑换。
+- [x] 账号/设备验证通过后仅存令牌；保留高级令牌方式。
+- [x] 同账号保护、重复账号、实体 ID/自定义名称稳定性已有自动化测试。
+- [x] 所有者反馈真实短信登录可用。
+- [ ] 确认 HA 重启后保持会话，以及新登录对小吉 App 会话的影响。
+- [ ] 自然观察过期、挑战、冷却和轮换规则；只有发现真实刷新机制才实现。
+- [ ] 完成真实重新认证后的设置保留检查。
 
-This can run alongside authentication and status research.
+验证步骤见[手机验证码验证](sms-acceptance.md)。这些未完成项限制稳定版承诺，
+不阻塞继续试用监测预览版。
 
-- [x] Initialize Git and establish intended repository/maintainer: `ajaxjiang96/ha-minij`.
-- [x] Create the requested public repository `ajaxjiang96/ha-minij`.
-- [x] Validate and merge [foundation PR #1](https://github.com/ajaxjiang96/ha-minij/pull/1): merged as `502f89d`; both branch validation workflows passed and Codex reported no findings.
-- [x] Select an open-source license and add `LICENSE`; include only authored integration code, documentation, and sanitized fixtures in the initial history. Keep APKs, decompilation, account logs, tokens, network identifiers, and raw responses out of publication.
-- [x] Separate user installation/support instructions from reverse-engineering notes; remove workstation-specific prerequisites from the normal setup path.
-- [x] Add issue templates for bugs and model-support reports, contribution instructions, and a documented method for submitting redacted evidence.
-- [x] Add Linux CI with supported Python/HA versions, transport tests, HA runtime tests, Ruff, hassfest, and HACS validation. Test the declared minimum and current released HA version; recheck versions when implementing.
-- [x] Get a full test process to exit 0 on the release CI environment. Keep the macOS finalization reproducer separate; do not hide nonzero exits or count assertions alone as green CI.
+## 第三层：可信状态
 
-**Acceptance:** a clean checkout has one documented development command sequence, all required CI jobs pass with exit 0, and the initial public history contains no private artifacts. Real repository URLs and maintainer identity are ready for the manifests.
+- [x] 保留状态别名和原始文字，未知值不猜测。
+- [x] 测试云端故障变为不可用、恢复不改变实体身份。
+- [x] 测试新增设备、移除/返回不生成重复实体。
+- [x] 实现白名单缓存诊断；导出不发起网络请求，并标明条目及刷新状态。
+- [x] 观察空闲、运行及回空闲；确认空闲进程不能单独代表正在洗涤。
+- [ ] 有正常使用机会时，对照启动、阶段、明确完成以及日常取消/暂停。
+- [ ] 区分 `device_exception` 的具体来源，验证物理离线语义。
+- [ ] 验证倒计时单位、结束和空闲行为后再考虑剩余时间。
+- [ ] 需要时根据新证据完善状态翻译和动态设备元数据。
 
-## Milestone 2 Account setup and session lifecycle
+继续提供现有监测字段，不将 `working → resting` 自动解释为成功完成。
+观察方法见[日常观察指南](cycle-validation.md)。
 
-This is the largest usability blocker: log-extracted tokens are suitable for the prototype, not the normal first-release setup.
+## 第四层：HACS 预发布与独立安装
 
-- [x] Recover the exact phone-login SMS `type`: `login`, confirmed by the successful app login log. See [authentication evidence](authentication.md).
-- [ ] Establish challenge/cooldown behavior. The unrelated web whitelist SMS type must not be reused.
-- [x] Implement a HA phone → request code → enter code → verify account/device access flow (fixture-tested; owner reports it works, with session persistence/rotation still pending). Send SMS only on the user's explicit submission; handle incorrect codes, timeouts, challenges, and server limits with actionable messages.
-- [ ] Establish token behavior across HA restart, additional app logins, expiry/revocation, and logout. Use an actual renewal mechanism only if observed; otherwise use the same SMS flow for reauthentication.
-- [ ] Complete live reauthentication acceptance; runtime tests verify matching-account credentials preserve entity IDs and registry names. A different account must not silently replace the original account's credentials.
-- [x] Keep token entry available as an explicitly documented advanced method if useful; normal installation must not depend on reading app logs.
+- [ ] 从公开 HACS 自定义仓库完成安装、更新、重装验证，确认标识稳定。
+- [ ] 针对确切提交发布测试版本，说明型号/固件、云端依赖和已知限制。
+- [ ] 让另一位所有者仅根据中文 README 完成安装和使用。
+- [ ] 在日常使用中补充持续运行、HA 重启和自然会话恢复记录。
 
-**Acceptance:** a fresh owner can configure and later reauthenticate entirely through HA, without an emulator or developer tools. Both fixture tests and a real account exercise the flow. If a login challenge prevents this, keep the build labeled an advanced beta and resolve that blocker before calling it the first general release.
+发布测试版与合并 PR 是独立动作，未执行的发布不能标为完成。
+预览版可保留上述未验证功能，说明边界后继续推进。
 
-## Milestone 3 Dependable washer state
+## 第五层：首个稳定版
 
-Use the existing installation to collect a user-run normal cycle. Physical appliance actions and firmware changes remain user-operated during validation.
+- [ ] 关闭登录、会话、状态真实性和独立安装的阻塞项。
+- [ ] 对确切发布提交重新检查 CI、支持矩阵和安装说明。
+- [ ] 发布 `v0.1.0`，提供经验证的自动化示例和支持政策。
 
-- [ ] Record redacted API snapshots and corresponding app/HA observations for idle, cycle start, stage transitions, completion, and a user-performed pause/cancel when supported. Capture naturally occurring errors without deliberately causing an appliance fault.
-- [ ] Investigate the screenshot's `device_exception` → `working` transition. Preserve the raw alias and correlate any fault information before labeling it as a specific problem.
-- [ ] Verify device-offline, cloud-unreachable, and unknown-status behavior separately. Implement appliance availability and stale-data handling from observed semantics; current availability only checks cloud refresh and whether the device remains bound.
-- [ ] Translate known status aliases in English and Chinese while preserving stable machine-readable states and raw diagnostic values for new aliases.
-- [ ] Establish whether program/process fields describe the active cycle or the last/default cycle. Retain accurate labels for idle values.
-- [ ] Add remaining time only after validating units, countdown behavior, and idle/completed semantics. The earlier idle `48` versus app estimate `76` is not a validated countdown.
-- [ ] Expose useful fault information only when its source and meaning are confirmed. Refresh device metadata when firmware or naming changes.
-- [ ] Test restart, reload, temporary outage, recovery, removed devices, and multiple bound devices. An allowlisted cached HA diagnostics export is now implemented, alongside outage recovery and multiple-device lifecycle tests; real-cycle acceptance remains pending.
+稳定版的功能承诺以真实验证为准。默认 HACS 列表收录可在测试反馈后申请，
+初期通过自定义仓库分发。
 
-**Acceptance:** one complete real cycle is correlated end to end; completion, cancellation, error, and unknown values cannot be confused in supported automation inputs. Offline data behaves truthfully. Unverified optional fields remain omitted. Firmware-specific support is recorded explicitly.
+## 后续能力
 
-## Milestone 4 HACS beta and independent installation
+1. 控制：先追踪并验证一条型号支持的指令，再扩大范围，确认所需授权和设备结果。
+2. 固件：仅在所有者决定更新后比较前后证据，不猜测兼容性。
+3. 更多型号：根据真实报告增加能力，不提前搭建通用家电框架。
+4. 局域网/HA Core：有证据再调查；确有复用或提交 Core 需要时再拆分 API 库。
 
-Depends on Milestones 1–3 for the normal-user beta.
+## 上游约定
 
-- [ ] Complete `hacs.json`, real manifest documentation/issue URLs, maintainer ownership, and permitted brand assets. The missing icon in the user's screenshot belongs here.
-- [ ] Validate installation from the public HACS custom repository, upgrade from the beta, uninstall, and reinstall. Verify stable device/entity IDs across upgrades.
-- [ ] Publish a tagged prerelease such as `0.1.0-beta.1` with release notes, supported model/firmware, cloud behavior, known limitations, and troubleshooting.
-- [ ] Have another owner perform a fresh installation using only the README. Record their model, firmware, HA version, and results; do not claim additional-model support from successful installation alone.
-- [ ] Complete a proposed 48-hour soak including a normal cycle, HA restart, and session recovery; review polling/error behavior and user-visible states.
-
-**Acceptance:** an independent V6-XNB owner completes installation and monitoring without direct developer intervention; required checks are green and no release-blocking authentication, state, privacy, or upgrade defects remain.
-
-## Milestone 5 First stable public release
-
-- [ ] Resolve beta blockers and rerun the release checks against the exact release commit.
-- [ ] Publish `v0.1.0` with install instructions, a tested support matrix, screenshots, migration/upgrade notes where relevant, and a minimal completion-automation example based on verified state transitions.
-- [ ] Document the support policy and how unknown models/firmware are reported. State that this is an unofficial MiniJ cloud integration.
-
-**Acceptance:** another user can install, authenticate, monitor a real cycle, restart HA, and recover authentication using the released documentation and artifact. Default HACS-store inclusion can be requested after beta feedback; custom-repository installation is the initial distribution route.
-
-## After the first release
-
-1. **Controls:** trace model-supported commands, required cloud authorization, parameter semantics, and acknowledgements. Add one command end to end with verified device outcome before expanding. Keep user-selected versus controller-reported programs distinct.
-2. **Firmware compatibility:** compare the retained baseline with a user-chosen update, including authorization and recovery behavior; add fixtures for observed differences rather than speculative compatibility paths.
-3. **More models:** accept model/firmware evidence and add capabilities from actual responses, without creating a generic appliance framework in advance.
-4. **Local operation and HA Core:** investigate LAN support if evidence warrants it. Consider a separately published API library when another consumer or a Core submission makes that boundary useful.
-
-## Next work order
-
-Milestones 1 and SMS implementation are merged. Complete the remaining **session persistence/rotation checks**, then use [cycle validation](cycle-validation.md) and diagnostics to correlate a normal real cycle. Build the public beta after those results establish a usable setup flow and truthful monitoring behavior.
-
-## Upstream requirements
-
-- [HACS general requirements](https://www.hacs.xyz/docs/publish/start/): public GitHub repository, user documentation, and root HACS manifest.
-- [HACS integration requirements](https://www.hacs.xyz/docs/publish/integration/): integration layout, required manifest metadata, and brand assets.
-- [HACS validation action](https://www.hacs.xyz/docs/publish/action/): repository validation and hassfest guidance.
-- [Home Assistant integration manifest](https://contributors.home-assistant.io/core/integrations/manifest/): integration identity and metadata.
-
-These requirements were checked on 2026-10-26; recheck them when preparing the release.
+[HA manifest](https://contributors.home-assistant.io/core/integrations/manifest/)、
+[HACS 要求](https://www.hacs.xyz/docs/publish/start/)、
+[HACS 集成布局](https://www.hacs.xyz/docs/publish/integration/)、
+[HACS 验证](https://www.hacs.xyz/docs/publish/action/)已于本次开发查阅，发布前需复核。
