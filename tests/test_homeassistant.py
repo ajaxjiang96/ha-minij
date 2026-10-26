@@ -680,3 +680,99 @@ async def test_metadata_refresh_preserves_user_settings_and_identity(hass, api):
     assert registry.async_get(device.id).name_by_user == "My washer"
     assert registry.async_get(device.id).area_id == area.id
     assert entity_ids(hass) == ids
+
+
+async def test_status_translation_unknown_and_idle_context(hass, api):
+    """Keep raw automation states and IDs, exposing idle reports as context."""
+    from homeassistant.helpers.translation import async_get_translations
+
+    entry = await configure(hass)
+    ids = entity_ids(hass)
+    for alias, active in (
+        ("resting", False),
+        ("working", True),
+        ("device_exception", None),
+        ("future-status", None),
+        (None, None),
+        ("resting", False),
+    ):
+        device = deepcopy(DEVICE)
+        device["deviceCharacterMap"]["current_status_alias"] = alias
+        api[1].return_value = [device]
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+        state = hass.states.get(ids["current_status_alias"])
+        assert state.state == (alias or "unknown")
+        assert state.attributes["device_class"] == "enum"
+        if alias:
+            assert alias in state.attributes["options"]
+        for key, raw in (("current_mode", "标准"), ("current_process", "主洗")):
+            report = hass.states.get(ids[key])
+            assert report.state == raw
+            assert report.attributes["active_cycle_reported"] is active
+        assert entity_ids(hass) == ids
+    assert "future-status" not in state.attributes["options"]
+    for language, label in (("zh-Hans", "空闲"), ("en", "Idle")):
+        strings = await async_get_translations(hass, language, "entity", {"minij"})
+        prefix = "component.minij.entity.sensor."
+        assert strings[f"{prefix}status.state.resting"] == label
+        for alias in ("working", "device_exception"):
+            assert strings[f"{prefix}status.state.{alias}"]
+        for key in ("reported_program", "reported_process"):
+            assert strings[f"{prefix}{key}.state_attributes.active_cycle_reported.name"]
+
+
+async def test_poll_backoff_rate_limit_and_reset(hass, api):
+    """Bound outage retries and honor rate delays without requesting login."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.minij.api import MinijError, MinijRateLimitError
+
+    entry = await configure(hass)
+    coordinator = entry.runtime_data
+    api[1].side_effect = MinijError("Synthetic outage")
+    for delay in (60, 120, 240, 480, 900, 900):
+        with pytest.raises(UpdateFailed) as error:
+            await coordinator._async_update_data()
+        assert error.value.retry_after == delay
+    api[1].side_effect = None
+    await coordinator._async_update_data()
+    for error, delay in (
+        (MinijRateLimitError("Limited", retry_after=1800), 1800),
+        (MinijRateLimitError("Limited"), 300),
+        (MinijError("Cloud failure"), 240),
+    ):
+        api[1].side_effect = error
+        with pytest.raises(UpdateFailed) as result:
+            await coordinator._async_update_data()
+        assert result.value.retry_after == delay
+    assert not hass.config_entries.flow.async_progress_by_handler("minij")
+
+
+async def test_diagnostics_success_timestamp_survives_failure(hass, api):
+    """Mark cloud fetch time, including unchanged reports, without polling on export."""
+    from custom_components.minij.api import MinijError
+    from custom_components.minij.diagnostics import async_get_config_entry_diagnostics
+
+    entry = await configure(hass)
+    first = await async_get_config_entry_diagnostics(hass, entry)
+    timestamp = first["last_successful_cloud_refresh"]
+    assert timestamp is not None
+    calls = api[1].await_count
+    await async_get_config_entry_diagnostics(hass, entry)
+    assert api[1].await_count == calls
+    api[1].side_effect = MinijError("Outage")
+    await entry.runtime_data.async_refresh()
+    stale = await async_get_config_entry_diagnostics(hass, entry)
+    assert stale["last_successful_cloud_refresh"] == timestamp
+    assert stale["last_cloud_refresh_success"] is False
+    api[1].side_effect = None
+    await entry.runtime_data.async_refresh()
+    restored = await async_get_config_entry_diagnostics(hass, entry)
+    assert restored["last_successful_cloud_refresh"] > timestamp
+    assert restored["cached_devices"] == first["cached_devices"]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert (await async_get_config_entry_diagnostics(hass, entry))[
+        "last_successful_cloud_refresh"
+    ] is None

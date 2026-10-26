@@ -19,7 +19,7 @@
       },
       "phone": {
         "title": "获取小吉登录验证码",
-        "description": "输入已有小吉账号的中国大陆手机号（11 位，不带 +86）。提交将发送一条短信。新登录可能影响 App 会话，此行为尚未验证。不会自动发送短信。",
+        "description": "输入已有小吉账号的中国大陆手机号（11 位，不带 +86）。提交将发送一条短信。本次所有者测试中 App 保持登录，其他账号和会话轮换情形仍待观察。不会自动发送短信。",
         "data": {
           "phone": "手机号"
         }
@@ -75,13 +75,28 @@
   "entity": {
     "sensor": {
       "status": {
-        "name": "状态"
+        "name": "状态",
+        "state": {
+          "resting": "空闲",
+          "working": "运行中",
+          "device_exception": "设备上报异常"
+        }
       },
       "reported_program": {
-        "name": "设备上报程序"
+        "name": "设备上报程序",
+        "state_attributes": {
+          "active_cycle_reported": {
+            "name": "设备上报运行中"
+          }
+        }
       },
       "reported_process": {
-        "name": "设备上报进程"
+        "name": "设备上报进程",
+        "state_attributes": {
+          "active_cycle_reported": {
+            "name": "设备上报运行中"
+          }
+        }
       }
     },
     "binary_sensor": {

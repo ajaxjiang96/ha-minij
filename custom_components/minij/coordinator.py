@@ -1,7 +1,7 @@
 """Coordinate a single device-list request for all MiniJ entities."""
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -9,8 +9,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
-from .api import MinijAuthError, MinijClient, MinijError
+from .api import MinijAuthError, MinijClient, MinijError, MinijRateLimitError
 from .const import DOMAIN
 from .device import device_info
 
@@ -33,6 +34,8 @@ class MinijCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             always_update=False,
         )
         self.client = client
+        self.last_successful_refresh: datetime | None = None
+        self._retry_delay = 60
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         """Fetch devices without issuing appliance commands."""
@@ -41,7 +44,15 @@ class MinijCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         except MinijAuthError as err:
             raise ConfigEntryAuthFailed("MiniJ rejected the session token") from err
         except MinijError as err:
-            raise UpdateFailed("Unable to fetch MiniJ device status") from err
+            delay = self._retry_delay
+            self._retry_delay = min(delay * 2, 900)
+            if isinstance(err, MinijRateLimitError):
+                delay = max(delay, 300, err.retry_after or 0)
+            raise UpdateFailed(
+                "Unable to fetch MiniJ device status", retry_after=delay
+            ) from err
+        self._retry_delay = 60
+        self.last_successful_refresh = dt_util.utcnow()
         registry = dr.async_get(self.hass)
         for device in devices:
             device_id = device["deviceId"]
