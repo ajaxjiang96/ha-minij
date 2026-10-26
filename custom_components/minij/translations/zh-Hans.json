@@ -1,0 +1,38 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "连接小吉",
+        "description": "输入已登录小吉 App 的会话令牌。本集成读取设备状态，暂不支持手机号或短信登录。",
+        "data": {"token": "会话令牌"}
+      },
+      "reauth_confirm": {
+        "title": "重新连接小吉",
+        "description": "输入同一个小吉账号的新会话令牌。",
+        "data": {"token": "会话令牌"}
+      }
+    },
+    "error": {
+      "invalid_auth": "小吉拒绝了此会话令牌。",
+      "cannot_connect": "无法连接小吉，请稍后重试。",
+      "invalid_response": "小吉未返回有效的账号标识。",
+      "no_devices": "此小吉账号尚未绑定设备。",
+      "wrong_account": "此令牌属于另一个小吉账号。"
+    },
+    "abort": {
+      "already_configured": "此小吉账号已配置。",
+      "reauth_successful": "已更新小吉登录信息。"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {"name": "状态"},
+      "reported_program": {"name": "设备上报程序"},
+      "reported_process": {"name": "设备上报进程"}
+    },
+    "binary_sensor": {
+      "child_lock": {"name": "童锁已开启"},
+      "cloud_control_authorized": {"name": "云端控制已授权"}
+    }
+  }
+}

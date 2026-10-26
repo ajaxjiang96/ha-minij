@@ -1,0 +1,39 @@
+name: Model support report
+description: Report results for an additional MiniJ model or firmware.
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Public model and internal API model
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Device and Wi-Fi firmware versions
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Integration and Home Assistant versions
+    validations:
+      required: true
+  - type: textarea
+    id: observations
+    attributes:
+      label: Observed states and behavior
+      description: >-
+        Explain which fields were verified against the app or appliance.
+        Successful installation alone does not verify all model capabilities.
+    validations:
+      required: true
+  - type: textarea
+    id: fixture
+    attributes:
+      label: Minimal redacted example
+      description: >-
+        Include only relevant status keys. Remove credentials, phone numbers,
+        account/device IDs, serials, network details, and personal names.
+        Do not upload raw account responses or APKs.
+      render: json

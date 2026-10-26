@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a problem with the MiniJ integration.
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Remove tokens, phone numbers, serial numbers, device/account IDs,
+        Wi-Fi names, IP addresses, and other private data before submitting.
+        Do not upload APKs or raw account/network captures.
+  - type: input
+    id: version
+    attributes:
+      label: Integration version
+    validations:
+      required: true
+  - type: input
+    id: homeassistant
+    attributes:
+      label: Home Assistant version and installation type
+    validations:
+      required: true
+  - type: input
+    id: appliance
+    attributes:
+      label: Appliance model and firmware versions
+      description: Include the public model and internal model if available.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: Include steps to reproduce and when the problem started.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted error messages
+      render: text
