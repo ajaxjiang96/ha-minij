@@ -59,6 +59,12 @@ removing devices.
 Never paste a token into an issue. The advanced extraction method and
 confirmed SMS request format are in [authentication.md](docs/authentication.md).
 
+For support, the MiniJ entry offers **Download diagnostics** using an allowlist
+of cached model/firmware/status fields. No credentials or MiniJ identifiers are
+copied into its data section. HA adds system metadata around it; review before
+sharing. Follow the [normal-cycle validation guide](docs/cycle-validation.md)
+to help establish reliable state meanings.
+
 Source repository: [ajaxjiang96/ha-minij](https://github.com/ajaxjiang96/ha-minij).
 The source layout and HACS metadata are prepared; this is not yet a tagged
 release or a default HACS listing.

@@ -73,3 +73,20 @@ expiry duration. Hosted Linux results for the SMS branch are checked separately.
 The macOS HA test interpreter still exits 139 during shutdown even when all
 assertions pass, as with the recorded built-in-HA baseline. Do not treat that
 process as a green suite; use the Linux CI result.
+
+## Diagnostics and lifecycle checks
+
+The next working layer adds an HA diagnostics platform that exports only
+allowlisted cached model, firmware, status, and raw online-flag fields. It
+excludes config-entry data, tokens, account/device identifiers, nicknames,
+serials, and arbitrary nested API fields. The export makes no network request
+and marks the last cloud refresh outcome; failed refreshes leave cached
+observations separate from unavailable entity states. HA's outer diagnostics
+wrapper includes system metadata and should be reviewed before sharing.
+
+New real-HA-runtime checks cover cloud outage/recovery without reauthentication
+or identity changes, adding a second appliance after setup, removal/reappearance
+without duplicate entities, and allowlisted diagnostics including unloaded
+entries. No physical-offline or completion semantics are inferred. The next
+live evidence is an owner-operated normal cycle using
+[cycle validation](cycle-validation.md).

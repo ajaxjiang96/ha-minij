@@ -503,3 +503,128 @@ async def test_authentication_translations_load_through_homeassistant(hass, lang
         assert strings[f"{prefix}{step}.data.{field}"].strip()
     assert "not supported yet" not in strings[f"{prefix}user.description"]
     assert "暂不支持" not in strings[f"{prefix}user.description"]
+
+
+async def test_cloud_outage_recovery_keeps_entity_identity(hass, api):
+    """An outage makes stale readings unavailable and recovery restores them."""
+    from custom_components.minij.api import MinijError
+
+    entry = await configure(hass)
+    ids = entity_ids(hass)
+    api[1].side_effect = MinijError("Cloud temporarily unreachable")
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert not entry.runtime_data.last_update_success
+    assert all(
+        hass.states.get(entity_id).state == "unavailable" for entity_id in ids.values()
+    )
+    assert not hass.config_entries.flow.async_progress_by_handler("minij")
+    api[1].side_effect = None
+    changed = deepcopy(DEVICE)
+    changed["deviceCharacterMap"]["current_status_alias"] = "working"
+    api[1].return_value = [changed]
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert entry.runtime_data.last_update_success
+    assert entity_ids(hass) == ids
+    assert hass.states.get(ids["current_status_alias"]).state == "working"
+
+
+async def test_new_device_removal_and_return_does_not_duplicate_entities(hass, api):
+    """Bind another appliance after setup, then remove and restore the first."""
+    entry = await configure(hass)
+    second = deepcopy(DEVICE)
+    second["deviceId"] = "second-test-device"
+    second["deviceNickName"] = "Second washer"
+    api[1].return_value = [deepcopy(DEVICE), second]
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    registry = er.async_get(hass)
+    original_ids = {e.id for e in registry.entities.values() if e.platform == "minij"}
+    assert len(original_ids) == 10
+    api[1].return_value = [second]
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    for entity in registry.entities.values():
+        if entity.platform == "minij":
+            state = hass.states.get(entity.entity_id)
+            if entity.unique_id.startswith("washer-test-device_"):
+                assert state.state == "unavailable"
+            else:
+                assert state.state != "unavailable"
+    api[1].return_value = [deepcopy(DEVICE), second]
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert {
+        e.id for e in registry.entities.values() if e.platform == "minij"
+    } == original_ids
+    assert all(
+        hass.states.get(e.entity_id).state != "unavailable"
+        for e in registry.entities.values()
+        if e.platform == "minij"
+    )
+
+
+async def test_diagnostics_allowlist_and_stale_data_marker(hass, api):
+    """Nested private fields never reach diagnostics, including after an outage."""
+    import json
+
+    from custom_components.minij.api import MinijError
+    from custom_components.minij.diagnostics import async_get_config_entry_diagnostics
+
+    entry = await configure(hass)
+    private = "sensitive-test-canary"
+    device = deepcopy(DEVICE)
+    device.update(
+        {
+            "deviceId": "washer-test-device",
+            "deviceNickName": private,
+            "token": private,
+            "phone": private,
+            "serial": private,
+            "unknown": {"nested_private": private},
+        }
+    )
+    device["deviceCharacterMap"]["unknown_field"] = {"secret": private}
+    api[1].return_value = [device]
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    calls = api[1].await_count
+    result = await async_get_config_entry_diagnostics(hass, entry)
+    serialized = json.dumps(result)
+    for value in (private, "test-token", "test-account", "washer-test-device"):
+        assert value not in serialized
+    assert api[1].await_count == calls  # Download does not poll or log in.
+    assert result["entry_state"] == "loaded"
+    assert result["last_cloud_refresh_success"] is True
+    summary = result["cached_devices"][0]
+    assert summary["deviceModel"] == "minij.washer.x68"
+    assert summary["reported"]["current_status_alias"] == "resting"
+    assert summary["reported_online_status"] == 1
+    assert "program_remain_time" not in summary["reported"]
+    api[1].side_effect = MinijError("Cloud outage")
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    stale = await async_get_config_entry_diagnostics(hass, entry)
+    assert stale["last_cloud_refresh_success"] is False
+    assert stale["cached_devices"] == result["cached_devices"]
+    # Removing a device removes its diagnostic record after a successful poll.
+    api[1].side_effect = None
+    api[1].return_value = []
+    await entry.runtime_data.async_refresh()
+    assert (await async_get_config_entry_diagnostics(hass, entry))[
+        "cached_devices"
+    ] == []
+
+
+async def test_diagnostics_without_loaded_runtime(hass, api):
+    """A user can inspect an unloaded entry without a live coordinator."""
+    from custom_components.minij.diagnostics import async_get_config_entry_diagnostics
+
+    entry = await configure(hass)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    result = await async_get_config_entry_diagnostics(hass, entry)
+    assert result["entry_state"] == "not_loaded"
+    assert result["last_cloud_refresh_success"] is None
+    assert result["cached_devices"] == []

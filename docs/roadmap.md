@@ -10,8 +10,8 @@ The prototype already works on the user's Home Assistant installation. The next 
 - The user's installed HA screenshot confirms five entities, a running program, and the observed transition `device_exception` → `working`. This does not establish the cause of the exception or a complete cycle lifecycle.
 - Current entities: status, reported program, reported process, child lock, and cloud control authorization.
 - Existing firmware baseline: Wi-Fi `1.0253`, device firmware `0 0003 1 0000`. No update has been installed by the agent.
-- Token setup is verified. Experimental phone/SMS setup and same-account reauthentication are implemented; live SMS acceptance and token lifetime/renewal remain unknown.
-- All 16 tests now pass with exit 0 on Linux ARM64. The earlier macOS-only finalization failure and its built-in-HA baseline remain documented. The live MiniJ HA smoke process also exits successfully.
+- Token setup is verified. Experimental phone/SMS setup and same-account reauthentication are implemented; the account owner reports the SMS flow works. Browser translation caching was observed; restart persistence, session rotation, and token lifetime/renewal remain unverified.
+- The merged SMS branch passed all 66 tests in hosted Linux CI (minimum/current HA), hassfest, and HACS. The earlier macOS-only finalization failure and its built-in-HA baseline remain documented. The live MiniJ HA smoke process also exits successfully.
 - Local Git, MIT license, CI configuration, HACS metadata, maintainer, and the user-supplied brand icon are prepared. The public repository is created; validation and PR status are recorded in [foundation status](foundation.md).
 
 The current `0.1.0` manifest/ZIP identifies a local prototype; it is not an existing public release.
@@ -43,7 +43,7 @@ This is the largest usability blocker: log-extracted tokens are suitable for the
 
 - [x] Recover the exact phone-login SMS `type`: `login`, confirmed by the successful app login log. See [authentication evidence](authentication.md).
 - [ ] Establish challenge/cooldown behavior. The unrelated web whitelist SMS type must not be reused.
-- [x] Implement a HA phone → request code → enter code → verify account/device access flow (fixture-tested; live acceptance remains pending). Send SMS only on the user's explicit submission; handle incorrect codes, timeouts, challenges, and server limits with actionable messages.
+- [x] Implement a HA phone → request code → enter code → verify account/device access flow (fixture-tested; owner reports it works, with session persistence/rotation still pending). Send SMS only on the user's explicit submission; handle incorrect codes, timeouts, challenges, and server limits with actionable messages.
 - [ ] Establish token behavior across HA restart, additional app logins, expiry/revocation, and logout. Use an actual renewal mechanism only if observed; otherwise use the same SMS flow for reauthentication.
 - [ ] Complete live reauthentication acceptance; runtime tests verify matching-account credentials preserve entity IDs and registry names. A different account must not silently replace the original account's credentials.
 - [x] Keep token entry available as an explicitly documented advanced method if useful; normal installation must not depend on reading app logs.
@@ -61,7 +61,7 @@ Use the existing installation to collect a user-run normal cycle. Physical appli
 - [ ] Establish whether program/process fields describe the active cycle or the last/default cycle. Retain accurate labels for idle values.
 - [ ] Add remaining time only after validating units, countdown behavior, and idle/completed semantics. The earlier idle `48` versus app estimate `76` is not a validated countdown.
 - [ ] Expose useful fault information only when its source and meaning are confirmed. Refresh device metadata when firmware or naming changes.
-- [ ] Test restart, reload, temporary outage, recovery, removed devices, and multiple bound devices. Add a small redacted HA diagnostics export for support.
+- [ ] Test restart, reload, temporary outage, recovery, removed devices, and multiple bound devices. An allowlisted cached HA diagnostics export is now implemented, alongside outage recovery and multiple-device lifecycle tests; real-cycle acceptance remains pending.
 
 **Acceptance:** one complete real cycle is correlated end to end; completion, cancellation, error, and unknown values cannot be confused in supported automation inputs. Offline data behaves truthfully. Unverified optional fields remain omitted. Firmware-specific support is recorded explicitly.
 
@@ -94,7 +94,7 @@ Depends on Milestones 1–3 for the normal-user beta.
 
 ## Next work order
 
-Milestone 1 is merged. Complete **Milestone 2 live SMS/session acceptance** using the experimental HA flow. Collect cycle evidence during normal use in parallel. Build the public beta after those results establish a usable setup flow and truthful monitoring behavior.
+Milestones 1 and SMS implementation are merged. Complete the remaining **session persistence/rotation checks**, then use [cycle validation](cycle-validation.md) and diagnostics to correlate a normal real cycle. Build the public beta after those results establish a usable setup flow and truthful monitoring behavior.
 
 ## Upstream requirements
 

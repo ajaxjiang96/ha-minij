@@ -76,6 +76,16 @@ Keep entity and device IDs unchanged when changing credentials or versions.
 To remove the integration, delete its config entry in Settings → Devices &
 services, remove `custom_components/minij`, and restart Home Assistant.
 
+## Diagnostics and cycle observations
+
+Use the MiniJ entry’s **Download diagnostics** option after installing this
+build and restarting HA. Its MiniJ data uses an allowlist rather than copying
+complete API responses. HA adds system metadata around it; review before
+sharing. A failed cloud refresh leaves cached diagnostic values explicitly
+marked as stale while the entities become unavailable. See the
+[cycle validation guide](cycle-validation.md) for fields, privacy boundaries,
+and a small sequence of useful normal-cycle observations.
+
 ## Bug reports
 
 Include integration and HA versions, installation type, public/internal model,
