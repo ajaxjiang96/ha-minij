@@ -128,13 +128,14 @@ async def test_config_flow_entities_and_unload(hass, api):
     assert devices.await_count == 2  # Flow validation and one coordinator refresh.
 
     ids = entity_ids(hass)
-    assert len(ids) == 5
+    assert len(ids) == 6
     expected = {
         "current_status_alias": "resting",
         "current_mode": "标准",
         "current_process": "主洗",
         "child_lock_status": "off",
         "cloud_control_authorization": "on",
+        "program_remain_time": "unknown",
     }
     for key, value in expected.items():
         state = hass.states.get(ids[key])
@@ -301,7 +302,7 @@ async def test_sms_requires_submission_and_stores_only_token(hass, api, sms_api)
     assert entry.data == {"token": "sms-session-token"}
     assert entry.unique_id == "test-account"
     await hass.async_block_till_done()
-    assert len(entity_ids(hass)) == 5
+    assert len(entity_ids(hass)) == 6
 
 
 @pytest.mark.parametrize(
@@ -541,7 +542,7 @@ async def test_new_device_removal_and_return_does_not_duplicate_entities(hass, a
     await hass.async_block_till_done()
     registry = er.async_get(hass)
     original_ids = {e.id for e in registry.entities.values() if e.platform == "minij"}
-    assert len(original_ids) == 10
+    assert len(original_ids) == 12
     api[1].return_value = [second]
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
@@ -601,7 +602,7 @@ async def test_diagnostics_allowlist_and_stale_data_marker(hass, api):
     assert summary["deviceModel"] == "minij.washer.x68"
     assert summary["reported"]["current_status_alias"] == "resting"
     assert summary["reported_online_status"] == 1
-    assert "program_remain_time" not in summary["reported"]
+    assert summary["reported"]["program_remain_time"] == "48"
     api[1].side_effect = MinijError("Cloud outage")
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
@@ -776,3 +777,160 @@ async def test_diagnostics_success_timestamp_survives_failure(hass, api):
     assert (await async_get_config_entry_diagnostics(hass, entry))[
         "last_successful_cloud_refresh"
     ] is None
+
+
+@pytest.mark.parametrize(
+    ("alias", "value", "expected"),
+    [
+        ("working", "57", "57"),
+        ("working", 57, "57"),
+        ("working", "0", "0"),
+        ("working", "65", "65"),
+        ("resting", "48", "unknown"),
+        ("device_exception", "57", "unknown"),
+        ("paused", "57", "unknown"),
+        ("future-status", "57", "unknown"),
+        (None, "57", "unknown"),
+        ("working", None, "unknown"),
+        ("working", "-1", "unknown"),
+        ("working", -1, "unknown"),
+        ("working", True, "unknown"),
+        ("working", "00:57", "unknown"),
+        ("working", "57.5", "unknown"),
+        ("working", 57.5, "unknown"),
+        ("working", "五十七", "unknown"),
+    ],
+)
+async def test_remaining_minutes_only_for_working_v6(hass, api, alias, value, expected):
+    """Expose cloud minutes only while explicitly working; zero is not completion."""
+    device = deepcopy(DEVICE)
+    device["deviceCharacterMap"].update(
+        current_status_alias=alias, program_remain_time=value
+    )
+    api[1].return_value = [device]
+    await configure(hass)
+    state = hass.states.get(entity_ids(hass)["program_remain_time"])
+    assert state.state == expected
+    assert state.attributes["unit_of_measurement"] == "min"
+    assert state.attributes["device_class"] == "duration"
+    assert "state_class" not in state.attributes
+
+
+async def test_duration_lifecycle_and_unknown_model(hass, api):
+    """Idle/recovery never fabricate countdowns or completion; old IDs remain."""
+    from custom_components.minij.api import MinijError
+
+    entry = await configure(hass)
+    ids = entity_ids(hass)
+    remaining = ids["program_remain_time"]
+    device = deepcopy(DEVICE)
+    device["deviceCharacterMap"].update(
+        current_status_alias="working", program_remain_time="57"
+    )
+    api[1].return_value = [device]
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get(remaining).state == "57"
+    # Another successful identical report stays 57; there is no local countdown.
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get(remaining).state == "57"
+    api[1].side_effect = MinijError("Synthetic outage")
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get(remaining).state == "unavailable"
+    api[1].side_effect = None
+    device["deviceCharacterMap"]["current_status_alias"] = "resting"
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get(remaining).state == "unknown"
+    assert entity_ids(hass) == ids
+    second = deepcopy(DEVICE)
+    second.update(deviceId="unsupported-model-device", deviceModel="unknown-model")
+    api[1].return_value = [device, second]
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    entities = er.async_get(hass).entities.values()
+    assert len([e for e in entities if e.platform == "minij"]) == 11
+    assert not any(
+        e.unique_id == "unsupported-model-device_program_remain_time" for e in entities
+    )
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert all(entity_ids(hass)[key] == value for key, value in ids.items())
+    assert hass.states.get(remaining).state == "unknown"
+
+
+async def test_exception_example_ignores_startup_recovery_and_repetition(hass):
+    """Use the real HA state trigger: only explicit known->exception transitions."""
+    from homeassistant.components.homeassistant.triggers import state
+    from homeassistant.util.yaml import load_yaml
+
+    example = load_yaml(
+        str(Path(__file__).parents[1] / "examples/reported-exception.yaml")
+    )
+    config = await state.async_validate_trigger_config(
+        hass,
+        {
+            "platform": "state",
+            **{k: v for k, v in example["triggers"][0].items() if k != "trigger"},
+        },
+    )
+    action = AsyncMock()
+    remove = await state.async_attach_trigger(
+        hass,
+        config,
+        action,
+        {"trigger_data": {"id": "0", "idx": "0"}, "variables": {}, "name": "test"},
+    )
+    entity_id = config["entity_id"][0]
+    try:
+        for value in (
+            "device_exception",  # Initial report must not notify.
+            "device_exception",
+            "unavailable",
+            "device_exception",  # Recovery must not notify.
+            "unknown",
+            "device_exception",
+        ):
+            hass.states.async_set(entity_id, value)
+            await hass.async_block_till_done()
+        action.assert_not_called()
+        for value in ("working", "device_exception", "device_exception"):
+            hass.states.async_set(entity_id, value)
+            await hass.async_block_till_done()
+        assert action.call_count == 1
+    finally:
+        remove()
+
+
+async def test_cycle_diagnostics_raw_allowlist(hass, api):
+    """Retain typed protocol observations without nested or boolean payloads."""
+    from custom_components.minij.diagnostics import async_get_config_entry_diagnostics
+
+    device = deepcopy(DEVICE)
+    device["deviceCharacterMap"].update(
+        current_process_alias="main_wash",
+        program_remain_time=57,
+        program_total_time="65",
+        fault_code={"private": "never-export-this"},
+        arbitrary_private="never-export-this",
+    )
+    api[1].return_value = [device]
+    entry = await configure(hass)
+    calls = api[1].await_count
+    result = await async_get_config_entry_diagnostics(hass, entry)
+    report = result["cached_devices"][0]["reported"]
+    assert report["current_process_alias"] == "main_wash"
+    assert report["program_remain_time"] == 57
+    assert report["program_total_time"] == "65"
+    assert "fault_code" not in report
+    assert "arbitrary_private" not in report
+    assert api[1].await_count == calls
+    device["deviceCharacterMap"].update(program_remain_time=True, fault_code="E-test")
+    await entry.runtime_data.async_refresh()
+    report = (await async_get_config_entry_diagnostics(hass, entry))["cached_devices"][
+        0
+    ]["reported"]
+    assert "program_remain_time" not in report
+    assert report["fault_code"] == "E-test"

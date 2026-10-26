@@ -1,0 +1,15 @@
+alias: 小吉上报进入异常状态
+triggers:
+  - trigger: state
+    entity_id: sensor.replace_with_your_minij_status
+    from:
+      - "resting"
+      - "working"
+    to: "device_exception"
+actions:
+  - action: persistent_notification.create
+    data:
+      notification_id: "{{ trigger.entity_id }}_reported_exception"
+      title: 小吉上报异常
+      message: 小吉云端上报设备异常，请查看机器及小吉 App。此提示不判断具体故障或物理联网状态。
+mode: single
