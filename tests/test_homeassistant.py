@@ -93,7 +93,13 @@ def api():
 async def configure(hass):
     """Create and set up a config entry using the real flow manager."""
     result = await hass.config_entries.flow.async_init(
-        "minij", context={"source": "user"}, data={"token": " test-token "}
+        "minij", context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "token"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"token": " test-token "}
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
@@ -197,14 +203,25 @@ async def test_auth_failure_starts_reauth_and_rejects_wrong_account(hass, api):
     devices.side_effect = None
     profile.return_value = {"userId": "different-account"}
     result = await hass.config_entries.flow.async_configure(
-        flows[0]["flow_id"], {"token": "wrong-account-token"}
+        flows[0]["flow_id"], {"next_step_id": "token"}
     )
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {"base": "wrong_account"}
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"token": "wrong-account-token"}
+    )
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "wrong_account"
     assert entry.data["token"] == "test-token"
     profile.return_value = {"userId": "test-account"}
+    result = await hass.config_entries.flow.async_init(
+        "minij",
+        context={"source": "reauth", "entry_id": entry.entry_id},
+        data=entry.data,
+    )
     result = await hass.config_entries.flow.async_configure(
-        flows[0]["flow_id"], {"token": "replacement-token"}
+        result["flow_id"], {"next_step_id": "token"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"token": "replacement-token"}
     )
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "reauth_successful"
@@ -218,8 +235,271 @@ async def test_duplicate_account_is_not_created(hass, api):
     """A second session for the same account does not duplicate entities."""
     await configure(hass)
     result = await hass.config_entries.flow.async_init(
-        "minij", context={"source": "user"}, data={"token": "another-test-token"}
+        "minij", context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "token"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"token": "another-test-token"}
     )
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "already_configured"
     assert len(hass.config_entries.async_entries("minij")) == 1
+
+
+@pytest.fixture
+def sms_api():
+    """Mock only the two external authentication operations."""
+    with (
+        patch(
+            "custom_components.minij.api.MinijClient.async_request_sms",
+            new_callable=AsyncMock,
+        ) as send,
+        patch(
+            "custom_components.minij.api.MinijClient.async_login",
+            new_callable=AsyncMock,
+            return_value="sms-session-token",
+        ) as login,
+    ):
+        yield send, login
+
+
+async def open_sms(hass):
+    result = await hass.config_entries.flow.async_init(
+        "minij", context={"source": "user"}
+    )
+    assert result["type"] == FlowResultType.MENU
+    return await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "phone"}
+    )
+
+
+async def test_sms_requires_submission_and_stores_only_token(hass, api, sms_api):
+    send, login = sms_api
+    result = await open_sms(hass)
+    assert result["step_id"] == "phone"
+    send.assert_not_awaited()
+    login.assert_not_awaited()
+    # Redisplaying a form cannot send an SMS.
+    result = await hass.config_entries.flow.async_configure(result["flow_id"])
+    send.assert_not_awaited()
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"phone": " 13800000000 "}
+    )
+    assert result["step_id"] == "sms"
+    send.assert_awaited_once_with("13800000000")
+    result = await hass.config_entries.flow.async_configure(result["flow_id"])
+    send.assert_awaited_once()
+    login.assert_not_awaited()
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"code": " 001234 "}
+    )
+    login.assert_awaited_once_with("13800000000", "001234")
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    entry = result["result"]
+    assert entry.data == {"token": "sms-session-token"}
+    assert entry.unique_id == "test-account"
+    await hass.async_block_till_done()
+    assert len(entity_ids(hass)) == 5
+
+
+@pytest.mark.parametrize(
+    "phone", ["", "+8613800000000", "1380000000", "abc", "２３８００００００００"]
+)
+async def test_invalid_phone_does_not_send(hass, api, sms_api, phone):
+    send, _ = sms_api
+    result = await open_sms(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"phone": phone}
+    )
+    assert result["errors"] == {"phone": "invalid_phone"}
+    send.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("operation", "exception", "error"),
+    [
+        ("send", "rate", "rate_limited"),
+        ("send", "login", "sms_rejected"),
+        ("send", "network", "sms_uncertain"),
+        ("login", "rate", "rate_limited"),
+        ("login", "login", "login_rejected"),
+        ("login", "network", "login_uncertain"),
+    ],
+)
+async def test_auth_errors_never_retry_automatically(
+    hass, api, sms_api, operation, exception, error
+):
+    from custom_components.minij.api import (
+        MinijError,
+        MinijLoginError,
+        MinijRateLimitError,
+    )
+
+    send, login = sms_api
+    failures = {
+        "rate": MinijRateLimitError,
+        "login": MinijLoginError,
+        "network": MinijError,
+    }
+    target = send if operation == "send" else login
+    target.side_effect = failures[exception]("private-server-detail")
+    result = await open_sms(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"phone": "13800000000"}
+    )
+    if operation == "login":
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"code": "001234"}
+        )
+    assert result["errors"] == {"base": error}
+    assert target.await_count == 1
+    assert "private-server-detail" not in str(result)
+    assert len(hass.config_entries.async_entries("minij")) == 0
+
+
+async def test_read_retry_does_not_exchange_code_twice(hass, api, sms_api):
+    from custom_components.minij.api import MinijError
+
+    profile, _ = api
+    send, login = sms_api
+    profile.side_effect = MinijError("Temporary outage after successful login")
+    result = await open_sms(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"phone": "13800000000"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"code": "001234"}
+    )
+    assert result["step_id"] == "validate"
+    assert result["errors"] == {"base": "cannot_connect"}
+    profile.side_effect = None
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    send.assert_awaited_once()
+    login.assert_awaited_once()
+    await hass.async_block_till_done()
+
+
+@pytest.mark.parametrize("source", ["reauth", "reconfigure"])
+async def test_sms_reauth_preserves_registry_and_account(hass, api, sms_api, source):
+    entry = await configure(hass)
+    registry = er.async_get(hass)
+    ids = entity_ids(hass)
+    status_id = ids["current_status_alias"]
+    registry.async_update_entity(status_id, name="My washer state")
+    before = {e.id for e in registry.entities.values() if e.platform == "minij"}
+    result = await hass.config_entries.flow.async_init(
+        "minij",
+        context={"source": source, "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+    assert result["type"] == FlowResultType.MENU
+    sms_api[0].assert_not_awaited()
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "phone"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"phone": "13800000000"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"code": "001234"}
+    )
+    assert result["reason"] == f"{source}_successful"
+    await hass.async_block_till_done()
+    assert entry.data == {"token": "sms-session-token"}
+    assert entry.unique_id == "test-account"
+    assert entity_ids(hass) == ids
+    assert {e.id for e in registry.entities.values() if e.platform == "minij"} == before
+    assert registry.async_get(status_id).name == "My washer state"
+
+
+@pytest.mark.parametrize("source", ["reauth", "reconfigure"])
+async def test_sms_reauth_rejects_different_account(hass, api, sms_api, source):
+    entry = await configure(hass)
+    api[0].return_value = {"userId": "different-account"}
+    result = await hass.config_entries.flow.async_init(
+        "minij",
+        context={"source": source, "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "phone"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"phone": "13800000000"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"code": "001234"}
+    )
+    assert result["reason"] == "wrong_account"
+    assert entry.data == {"token": "test-token"}
+
+
+async def test_invalid_code_and_cancel_do_not_send_more_sms(hass, api, sms_api):
+    result = await open_sms(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"phone": "13800000000"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"code": "not-a-code"}
+    )
+    assert result["errors"] == {"code": "invalid_code"}
+    hass.config_entries.flow.async_abort(result["flow_id"])
+    sms_api[0].assert_awaited_once()
+    sms_api[1].assert_not_awaited()
+    assert not hass.config_entries.async_entries("minij")
+
+
+async def test_sms_duplicate_account_and_no_devices(hass, api, sms_api):
+    await configure(hass)
+    api[1].return_value = []
+    result = await open_sms(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"phone": "13800000000"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"code": "001234"}
+    )
+    assert result["step_id"] == "validate"
+    assert result["errors"] == {"base": "no_devices"}
+    api[1].return_value = [deepcopy(DEVICE)]
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["reason"] == "already_configured"
+    assert len(hass.config_entries.async_entries("minij")) == 1
+    sms_api[1].assert_awaited_once()
+
+
+async def test_rejected_new_session_aborts_without_retry(hass, api, sms_api):
+    api[0].side_effect = MinijAuthError("Rejected new token")
+    result = await open_sms(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"phone": "13800000000"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"code": "001234"}
+    )
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "invalid_auth"
+    assert len(hass.config_entries.async_entries("minij")) == 0
+    sms_api[0].assert_awaited_once()
+    sms_api[1].assert_awaited_once()
+
+
+@pytest.mark.parametrize("language", ["en", "zh-Hans"])
+async def test_authentication_translations_load_through_homeassistant(hass, language):
+    """Check the exact backend resources used for menus and input labels."""
+    from homeassistant.helpers.translation import async_get_translations
+
+    strings = await async_get_translations(hass, language, "config", {"minij"})
+    prefix = "component.minij.config.step."
+    for step in ("user", "reauth_confirm", "reconfigure"):
+        for method in ("phone", "token"):
+            assert strings[f"{prefix}{step}.menu_options.{method}"].strip()
+    for step, field in (("phone", "phone"), ("sms", "code"), ("token", "token")):
+        assert strings[f"{prefix}{step}.title"].strip()
+        assert strings[f"{prefix}{step}.description"].strip()
+        assert strings[f"{prefix}{step}.data.{field}"].strip()
+    assert "not supported yet" not in strings[f"{prefix}user.description"]
+    assert "暂不支持" not in strings[f"{prefix}user.description"]

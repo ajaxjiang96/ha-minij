@@ -3,36 +3,94 @@
     "step": {
       "user": {
         "title": "Connect MiniJ",
-        "description": "Enter a session token from your signed-in MiniJ app. This integration reads appliance status. Phone/SMS login is not supported yet.",
-        "data": {"token": "Session token"}
+        "description": "Choose how to sign in. Phone/SMS login is experimental and still needs live validation.",
+        "menu_options": {
+          "phone": "Phone and SMS code (experimental)",
+          "token": "Existing session token (advanced)"
+        }
       },
       "reauth_confirm": {
         "title": "Reconnect MiniJ",
-        "description": "Enter a new session token from the same MiniJ account.",
-        "data": {"token": "Session token"}
+        "description": "Sign in to the same MiniJ account. Existing devices and entity settings will be preserved.",
+        "menu_options": {
+          "phone": "Phone and SMS code (experimental)",
+          "token": "Existing session token (advanced)"
+        }
+      },
+      "phone": {
+        "title": "Request a MiniJ login code",
+        "description": "Enter your existing MiniJ account’s mainland China mobile number (11 digits, without +86). Submitting sends one SMS. A new login may affect your app session; this behavior is unverified. No SMS is sent automatically.",
+        "data": {
+          "phone": "Mobile number"
+        }
+      },
+      "sms": {
+        "title": "Enter SMS code",
+        "description": "Enter the code MiniJ sent you. Submitting exchanges the code once. To change the number or request another SMS, cancel and start again; avoid repeated requests.",
+        "data": {
+          "code": "SMS code"
+        }
+      },
+      "validate": {
+        "title": "Check MiniJ account access",
+        "description": "Your code was accepted. Retry to check account and device access using the returned session. This does not send another SMS or exchange the code again."
+      },
+      "token": {
+        "title": "Use a MiniJ session token",
+        "description": "Enter a token from your own signed-in MiniJ account. During reauthentication it must belong to the original account.",
+        "data": {
+          "token": "Session token"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconnect MiniJ",
+        "description": "Sign in to the same MiniJ account. Existing devices and entity settings will be preserved.",
+        "menu_options": {
+          "phone": "Phone and SMS code (experimental)",
+          "token": "Existing session token (advanced)"
+        }
       }
     },
     "error": {
-      "invalid_auth": "MiniJ rejected the session token.",
+      "invalid_auth": "MiniJ rejected the session. Start again to sign in.",
       "cannot_connect": "Unable to connect to MiniJ. Try again later.",
       "invalid_response": "MiniJ did not return a valid account identity.",
-      "no_devices": "No appliances are bound to this MiniJ account.",
-      "wrong_account": "This token belongs to a different MiniJ account."
+      "no_devices": "No appliances are bound to this MiniJ account. Bind an appliance in the MiniJ app, then retry.",
+      "invalid_phone": "Enter an 11-digit mainland China mobile number without a country prefix.",
+      "invalid_code": "Enter the numeric code from your SMS.",
+      "rate_limited": "MiniJ is limiting requests. Wait before trying again; the server’s cooldown is unknown.",
+      "sms_rejected": "MiniJ did not confirm a supported SMS response. A code may have been sent. Avoid repeated requests; use token setup if the service requires an app challenge.",
+      "sms_uncertain": "The SMS request could not be confirmed. A code may have been sent. Check your messages and wait before submitting again.",
+      "login_rejected": "MiniJ did not accept this login or requires an unsupported challenge. Check the code in your SMS; use token setup if app verification is required.",
+      "login_uncertain": "The login result could not be confirmed. No automatic retry was made. Wait before trying again."
     },
     "abort": {
       "already_configured": "This MiniJ account is already configured.",
-      "reauth_successful": "MiniJ authentication was updated."
+      "reauth_successful": "MiniJ authentication was updated.",
+      "wrong_account": "This login belongs to a different MiniJ account. Start reauthentication again using the original account.",
+      "invalid_auth": "MiniJ rejected the new session. Start again to sign in.",
+      "reconfigure_successful": "MiniJ authentication was updated."
     }
   },
   "entity": {
     "sensor": {
-      "status": {"name": "Status"},
-      "reported_program": {"name": "Reported program"},
-      "reported_process": {"name": "Reported process"}
+      "status": {
+        "name": "Status"
+      },
+      "reported_program": {
+        "name": "Reported program"
+      },
+      "reported_process": {
+        "name": "Reported process"
+      }
     },
     "binary_sensor": {
-      "child_lock": {"name": "Child lock enabled"},
-      "cloud_control_authorized": {"name": "Cloud control authorized"}
+      "child_lock": {
+        "name": "Child lock enabled"
+      },
+      "cloud_control_authorized": {
+        "name": "Cloud control authorized"
+      }
     }
   }
 }

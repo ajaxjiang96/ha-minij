@@ -3,7 +3,7 @@
 Test runtimes: Home Assistant 2026.10.4 with CPython 3.14.8 on macOS ARM64
 and CPython 3.14.9 in the verified official Python Linux ARM64 image.
 
-## Linux result
+## Foundation Linux result (before SMS flow)
 
 All **16 tests pass with process exit 0** on Linux ARM64, following successful
 Ruff lint and format checks. The host-downloaded official image was verified
@@ -52,5 +52,24 @@ user's installed HA screenshot additionally shows `working` and a prior
 cause of that exception. Existing login logs establish SMS type `login` and
 the phone/code request schemas. Independent SMS login using the intended HA
 client headers, session lifetime/renewal, active-cycle timing, offline states,
-controls, other models, and updated firmware remain unverified. The current
-integration performs only reads.
+controls, other models, and updated firmware remain unverified. Appliance operations remain read-only; the experimental setup flow can now
+request SMS and exchange a login code on explicit user submissions.
+
+## SMS flow implementation checks
+
+Transport tests use a real local HTTP server and synthetic credentials. HA
+runtime tests mock only the MiniJ service, covering explicit SMS submission,
+no automatic resend, invalid input, rate limits/business/transport failures,
+code acceptance followed by read retries, no-device and duplicate accounts,
+wrong-account reauthentication, stable entity IDs and custom registry names,
+and continued advanced-token setup. Successful login stores only the token.
+
+A read-only live check with the existing token still succeeded after the
+implementation: one `minij.washer.x68`, status `working`. No new login, SMS,
+logout, firmware change, or appliance command was sent. This confirms the
+existing read path; it does not validate the new SMS path or establish an
+expiry duration. Hosted Linux results for the SMS branch are checked separately.
+
+The macOS HA test interpreter still exits 139 during shutdown even when all
+assertions pass, as with the recorded built-in-HA baseline. Do not treat that
+process as a green suite; use the Linux CI result.

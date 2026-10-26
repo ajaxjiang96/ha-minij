@@ -10,7 +10,7 @@ repository and explicitly requested its creation.
 - MIT license, authored source, sanitized synthetic tests, contribution
   instructions, troubleshooting, and bug/model-report templates.
 - HACS metadata, maintainer, and documentation/issue URLs targeting the
-  requested repository. Those URLs become usable once creation succeeds.
+  requested repository. The public URLs are live.
 - User-supplied MiniJ app icon in the component's `brand/` folder, copied
   unchanged. The obsolete placeholder artwork was removed.
 - Reproducible manual-install ZIP containing only runtime files.
@@ -32,8 +32,9 @@ with password prompts and Keychain use explicitly disabled.
 
 Publication uses [foundation PR #1](https://github.com/ajaxjiang96/ha-minij/pull/1)
 from `feat/open-source-foundation`. The repository base contains its ignore
-rules and MIT license. Integration code remains in the PR; no merge or release
-is performed as part of this foundation work.
+rules and MIT license. PR #1 was merged by the user as `502f89d`. Both branch validation workflows
+passed, including HACS after repository topics were added. Codex review of
+`810a5ca` completed without findings. No tagged release has been published.
 
 ## Linux validation
 

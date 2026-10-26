@@ -10,7 +10,7 @@ The prototype already works on the user's Home Assistant installation. The next 
 - The user's installed HA screenshot confirms five entities, a running program, and the observed transition `device_exception` → `working`. This does not establish the cause of the exception or a complete cycle lifecycle.
 - Current entities: status, reported program, reported process, child lock, and cloud control authorization.
 - Existing firmware baseline: Wi-Fi `1.0253`, device firmware `0 0003 1 0000`. No update has been installed by the agent.
-- Authentication uses an app session token extracted from local logs. SMS type `login` is now confirmed; token lifetime/renewal remain unknown.
+- Token setup is verified. Experimental phone/SMS setup and same-account reauthentication are implemented; live SMS acceptance and token lifetime/renewal remain unknown.
 - All 16 tests now pass with exit 0 on Linux ARM64. The earlier macOS-only finalization failure and its built-in-HA baseline remain documented. The live MiniJ HA smoke process also exits successfully.
 - Local Git, MIT license, CI configuration, HACS metadata, maintainer, and the user-supplied brand icon are prepared. The public repository is created; validation and PR status are recorded in [foundation status](foundation.md).
 
@@ -28,12 +28,12 @@ This can run alongside authentication and status research.
 
 - [x] Initialize Git and establish intended repository/maintainer: `ajaxjiang96/ha-minij`.
 - [x] Create the requested public repository `ajaxjiang96/ha-minij`.
-- [ ] Validate [foundation PR #1](https://github.com/ajaxjiang96/ha-minij/pull/1) before merging.
-- [ ] Select an open-source license and add `LICENSE`; include only authored integration code, documentation, and sanitized fixtures in the initial history. Keep APKs, decompilation, account logs, tokens, network identifiers, and raw responses out of publication.
-- [ ] Separate user installation/support instructions from reverse-engineering notes; remove workstation-specific prerequisites from the normal setup path.
-- [ ] Add issue templates for bugs and model-support reports, contribution instructions, and a documented method for submitting redacted evidence.
-- [ ] Add Linux CI with supported Python/HA versions, transport tests, HA runtime tests, Ruff, hassfest, and HACS validation. Test the declared minimum and current released HA version; recheck versions when implementing.
-- [ ] Get a full test process to exit 0 on the release CI environment. Keep the macOS finalization reproducer separate; do not hide nonzero exits or count assertions alone as green CI.
+- [x] Validate and merge [foundation PR #1](https://github.com/ajaxjiang96/ha-minij/pull/1): merged as `502f89d`; both branch validation workflows passed and Codex reported no findings.
+- [x] Select an open-source license and add `LICENSE`; include only authored integration code, documentation, and sanitized fixtures in the initial history. Keep APKs, decompilation, account logs, tokens, network identifiers, and raw responses out of publication.
+- [x] Separate user installation/support instructions from reverse-engineering notes; remove workstation-specific prerequisites from the normal setup path.
+- [x] Add issue templates for bugs and model-support reports, contribution instructions, and a documented method for submitting redacted evidence.
+- [x] Add Linux CI with supported Python/HA versions, transport tests, HA runtime tests, Ruff, hassfest, and HACS validation. Test the declared minimum and current released HA version; recheck versions when implementing.
+- [x] Get a full test process to exit 0 on the release CI environment. Keep the macOS finalization reproducer separate; do not hide nonzero exits or count assertions alone as green CI.
 
 **Acceptance:** a clean checkout has one documented development command sequence, all required CI jobs pass with exit 0, and the initial public history contains no private artifacts. Real repository URLs and maintainer identity are ready for the manifests.
 
@@ -43,10 +43,10 @@ This is the largest usability blocker: log-extracted tokens are suitable for the
 
 - [x] Recover the exact phone-login SMS `type`: `login`, confirmed by the successful app login log. See [authentication evidence](authentication.md).
 - [ ] Establish challenge/cooldown behavior. The unrelated web whitelist SMS type must not be reused.
-- [ ] Implement a HA phone → request code → enter code → verify account/device access flow. Send SMS only on the user's explicit submission; handle incorrect codes, timeouts, challenges, and server limits with actionable messages.
+- [x] Implement a HA phone → request code → enter code → verify account/device access flow (fixture-tested; live acceptance remains pending). Send SMS only on the user's explicit submission; handle incorrect codes, timeouts, challenges, and server limits with actionable messages.
 - [ ] Establish token behavior across HA restart, additional app logins, expiry/revocation, and logout. Use an actual renewal mechanism only if observed; otherwise use the same SMS flow for reauthentication.
-- [ ] Verify matching-account reauthentication preserves entity IDs, names, areas, and automations. A different account must not silently replace the original account's credentials.
-- [ ] Keep token entry available as an explicitly documented advanced method if useful; normal installation must not depend on reading app logs.
+- [ ] Complete live reauthentication acceptance; runtime tests verify matching-account credentials preserve entity IDs and registry names. A different account must not silently replace the original account's credentials.
+- [x] Keep token entry available as an explicitly documented advanced method if useful; normal installation must not depend on reading app logs.
 
 **Acceptance:** a fresh owner can configure and later reauthenticate entirely through HA, without an emulator or developer tools. Both fixture tests and a real account exercise the flow. If a login challenge prevents this, keep the build labeled an advanced beta and resolve that blocker before calling it the first general release.
 
@@ -94,7 +94,7 @@ Depends on Milestones 1–3 for the normal-user beta.
 
 ## Next work order
 
-Start with **Milestone 1's clean repository and Linux CI** plus **Milestone 2's SMS/session investigation**. Collect cycle evidence during normal use in parallel. Build the public beta after those results establish a usable setup flow and truthful monitoring behavior.
+Milestone 1 is merged. Complete **Milestone 2 live SMS/session acceptance** using the experimental HA flow. Collect cycle evidence during normal use in parallel. Build the public beta after those results establish a usable setup flow and truthful monitoring behavior.
 
 ## Upstream requirements
 

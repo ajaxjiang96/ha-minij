@@ -23,31 +23,84 @@ class MinijAuthError(MinijError):
     """The MiniJ session needs authentication."""
 
 
+class MinijLoginError(MinijError):
+    """MiniJ rejected a login request or requires an unsupported challenge."""
+
+
+class MinijRateLimitError(MinijError):
+    """MiniJ requests that the user wait before trying again."""
+
+
 class MinijClient:
     """Use an externally owned aiohttp session; never log credentials."""
 
-    def __init__(self, session: aiohttp.ClientSession, token: str) -> None:
+    def __init__(self, session: aiohttp.ClientSession, token: str = "") -> None:
         self._session = session
         self._headers = {**CLIENT_HEADERS, "token": token.strip()}
 
-    async def _get(self, route: str) -> Any:
+    async def _request(
+        self, method: str, route: str, body: dict[str, str] | None = None
+    ) -> Any:
+        """Perform one request without redirects, retries, or private error text."""
+        login_request = method == "POST"
         try:
-            async with self._session.get(
+            async with self._session.request(
+                method,
                 API_BASE + route,
-                headers=self._headers,
+                headers=CLIENT_HEADERS if login_request else self._headers,
+                json=body,
                 timeout=aiohttp.ClientTimeout(total=20),
                 allow_redirects=False,
             ) as response:
+                if response.status == 429:
+                    raise MinijRateLimitError("MiniJ rate limit reached")
                 if response.status in (401, 403):
+                    if login_request:
+                        raise MinijLoginError("MiniJ rejected the login request")
                     raise MinijAuthError("MiniJ rejected the session")
                 if response.status != 200:
                     raise MinijError(f"MiniJ returned HTTP {response.status}")
                 payload = await response.json()
-        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
-            raise MinijError("Unable to read MiniJ cloud data") from err
-        if not isinstance(payload, dict) or payload.get("success") is not True:
+        except aiohttp.ClientError, TimeoutError, ValueError:
+            raise MinijError("Unable to read MiniJ cloud data") from None
+        if not isinstance(payload, dict):
+            raise MinijError("MiniJ returned an invalid response")
+        if payload.get("success") is not True:
+            if login_request:
+                raise MinijLoginError("MiniJ did not accept the login request")
             raise MinijError("MiniJ returned an unsuccessful response")
         return payload.get("data")
+
+    async def _get(self, route: str) -> Any:
+        return await self._request("GET", route)
+
+    async def async_request_sms(self, phone: str) -> None:
+        """Request one login code only on an explicit user action."""
+        if not phone.strip():
+            raise MinijLoginError("A phone number is required")
+        result = await self._request(
+            "POST", "captcha/sendSmsCaptcha", {"phone": phone.strip(), "type": "login"}
+        )
+        # No challenge exchange has been observed. Do not treat a structured
+        # challenge or an unexpected payload as a successfully delivered code.
+        if result is not None and result is not True:
+            raise MinijLoginError("MiniJ returned an unsupported SMS response")
+
+    async def async_login(self, phone: str, code: str) -> str:
+        """Exchange one user-entered SMS code, returning only its session token."""
+        if not phone.strip() or not code.strip():
+            raise MinijLoginError("A phone number and SMS code are required")
+        profile = await self._request(
+            "POST",
+            "login/loginByPhone",
+            {"phone": phone.strip(), "captcha": code.strip()},
+        )
+        if not isinstance(profile, dict):
+            raise MinijLoginError("MiniJ returned an invalid login response")
+        token = profile.get("token")
+        if not isinstance(token, str) or not token.strip():
+            raise MinijLoginError("MiniJ did not return a session token")
+        return token.strip()
 
     async def async_get_profile(self) -> dict[str, str]:
         """Return only stable account identity, excluding profile secrets."""
