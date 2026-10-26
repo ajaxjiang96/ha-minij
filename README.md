@@ -73,6 +73,12 @@ V6-XNB 共七个实体。消息独立每分钟读取，首次/恢复只建立基
 HACS 自定义仓库无需等待默认列表收录。
 稳定版范围和限制见[0.1.1 发布说明](docs/releases/0.1.1.md)与[支持政策](docs/support.md)。
 
+## 0.4 开发候选
+
+新增默认禁用的“童锁控制（实验）”，原七个实体保持。只有所有者启用并显式操作才可能发送指令；
+候选限制于已观察固件、空闲和云授权开启，先读状态、单次发送、再读回确认。
+尚未向真实设备写入验证，不宣称已支持可靠控制；详见[验证方案](docs/child-lock-control.md)。
+
 ## 当前限制
 
 - **运行后回到空闲，不等于已确认正常完成。** 取消、停止等情况尚未区分；
@@ -100,6 +106,7 @@ HA 会在外围添加系统信息，分享前请检查。
 - [支持范围与反馈政策](docs/support.md)
 - [周期协议证据与缺口](docs/cycle-protocol.md)
 - [MIoT 规格与参考库分析](docs/miot-reference.md)
+- [0.4 实验童锁控制候选与验证方案](docs/child-lock-control.md)
 - [日常洗涤观察指南](docs/cycle-validation.md)
 - [完整集成路线图](docs/roadmap.md)：可靠监测、周期自动化、控制与多型号扩展
 - [首个稳定版验收记录](docs/stable-release-checklist.md)

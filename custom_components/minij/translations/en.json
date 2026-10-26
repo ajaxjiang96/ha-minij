@@ -129,6 +129,40 @@
           }
         }
       }
+    },
+    "switch": {
+      "child_lock_control": {
+        "name": "Child lock control (experimental)"
+      }
+    }
+  },
+  "exceptions": {
+    "control_read_failed": {
+      "message": "Unable to read current device state; no child-lock command was sent."
+    },
+    "control_unsupported": {
+      "message": "Child-lock control has not been verified for this model, firmware, or bucket configuration."
+    },
+    "control_not_authorized": {
+      "message": "The device has not reported cloud-control authorization; confirm authorization on the appliance first."
+    },
+    "control_not_idle": {
+      "message": "This preview only permits child-lock verification while the device explicitly reports idle."
+    },
+    "control_unknown_lock": {
+      "message": "The current child-lock state is unknown; no command was sent."
+    },
+    "control_auth_failed": {
+      "message": "MiniJ rejected authentication. Reauthenticate with the original account; the command was not retried."
+    },
+    "control_rate_limited": {
+      "message": "MiniJ rate-limited the request; the command was not retried. Wait and check the App."
+    },
+    "control_send_uncertain": {
+      "message": "The child-lock request result is uncertain; it may have been accepted. Check the appliance and App before trying again."
+    },
+    "control_not_confirmed": {
+      "message": "The cloud accepted the child-lock request, but the latest read has not confirmed the target state. Check the appliance and App; no retry was sent."
     }
   }
 }

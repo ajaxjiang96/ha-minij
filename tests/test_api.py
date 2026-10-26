@@ -333,3 +333,41 @@ async def test_invalid_notification_page_cannot_advance_cursor(service, data):
     state["body"]["data"] = data
     with pytest.raises(api.MinijError):
         await client.async_get_notifications("washer-test")
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_child_lock_exact_authenticated_payload_and_single_request(
+    service, enabled
+):
+    client, state = service
+    state["body"]["data"] = None
+    await client.async_set_child_lock("washer-test", enabled)
+    assert len(state["requests"]) == 1
+    request = state["requests"][0]
+    assert request.path == "/api/device/switchBasicFunction"
+    assert request.method == "POST"
+    assert request.headers["token"] == "test-token"
+    assert state["request_body"] == {
+        "deviceId": "washer-test",
+        "basicFunction": "childLock",
+        "onOff": enabled,
+        "bucketCode": "",
+    }
+    assert type(state["request_body"]["onOff"]) is bool
+
+
+@pytest.mark.parametrize("enabled", [1, 0, "open", "close", None])
+async def test_child_lock_rejects_non_boolean_before_request(service, enabled):
+    client, state = service
+    with pytest.raises(api.MinijError):
+        await client.async_set_child_lock("washer-test", enabled)
+    assert not state["requests"]
+
+
+@pytest.mark.parametrize("status", [401, 403, 429, 500, 302])
+async def test_child_lock_failures_are_not_retried(service, status):
+    client, state = service
+    state["status"] = status
+    with pytest.raises(api.MinijError):
+        await client.async_set_child_lock("washer-test", True)
+    assert len(state["requests"]) == 1
