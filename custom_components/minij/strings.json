@@ -114,6 +114,21 @@
       "cloud_control_authorized": {
         "name": "Cloud control authorized"
       }
+    },
+    "event": {
+      "device_notification": {
+        "name": "Device notification",
+        "state_attributes": {
+          "event_type": {
+            "name": "Notification type",
+            "state": {
+              "wash_completed": "Wash completed",
+              "cleaning_completed": "Cleaning completed",
+              "fault_reported": "Fault reported"
+            }
+          }
+        }
+      }
     }
   }
 }

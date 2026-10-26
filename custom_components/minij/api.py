@@ -1,5 +1,6 @@
 """Read-only MiniJ cloud API, verified against a V6-XNB."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -52,6 +53,22 @@ def _retry_after(value: str) -> float | None:
     return None
 
 
+NOTIFICATION_EVENTS = {
+    "洗衣完成": "wash_completed",
+    "清洁完成": "cleaning_completed",
+    "故障提醒": "fault_reported",
+}
+
+
+@dataclass(frozen=True)
+class DeviceNotification:
+    """Minimal internal notification identity, without private message content."""
+
+    message_id: str
+    pushed_at: datetime
+    event_type: str | None
+
+
 class MinijClient:
     """Use an externally owned aiohttp session; never log credentials."""
 
@@ -60,10 +77,14 @@ class MinijClient:
         self._headers = {**CLIENT_HEADERS, "token": token.strip()}
 
     async def _request(
-        self, method: str, route: str, body: dict[str, str] | None = None
+        self,
+        method: str,
+        route: str,
+        body: dict[str, str] | None = None,
+        *,
+        login_request: bool = False,
     ) -> Any:
         """Perform one request without redirects, retries, or private error text."""
-        login_request = method == "POST"
         try:
             async with self._session.request(
                 method,
@@ -103,7 +124,10 @@ class MinijClient:
         if not phone.strip():
             raise MinijLoginError("A phone number is required")
         result = await self._request(
-            "POST", "captcha/sendSmsCaptcha", {"phone": phone.strip(), "type": "login"}
+            "POST",
+            "captcha/sendSmsCaptcha",
+            {"phone": phone.strip(), "type": "login"},
+            login_request=True,
         )
         # No challenge exchange has been observed. Do not treat a structured
         # challenge or an unexpected payload as a successfully delivered code.
@@ -118,6 +142,7 @@ class MinijClient:
             "POST",
             "login/loginByPhone",
             {"phone": phone.strip(), "captcha": code.strip()},
+            login_request=True,
         )
         if not isinstance(profile, dict):
             raise MinijLoginError("MiniJ returned an invalid login response")
@@ -152,3 +177,42 @@ class MinijClient:
             if characters is not None and not isinstance(characters, dict):
                 raise MinijError("MiniJ returned invalid device status")
         return devices
+
+    async def async_get_notifications(self, device_id: str) -> list[DeviceNotification]:
+        """Read device messages without marking them read or clearing history."""
+        data = await self._request(
+            "POST",
+            "notificationCenter/findByPage",
+            {"type": "DEVICE_NOTIFICATION", "deviceId": device_id},
+        )
+        if not isinstance(data, dict) or not isinstance(data.get("content"), list):
+            raise MinijError("MiniJ returned an invalid notification page")
+        notifications = []
+        seen = set()
+        for record in data["content"]:
+            if not isinstance(record, dict):
+                raise MinijError("MiniJ returned an invalid notification")
+            message_id = record.get("id")
+            if (
+                not isinstance(message_id, str)
+                or not message_id
+                or message_id in seen
+                or record.get("deviceId") != device_id
+                or record.get("type") != "DEVICE_NOTIFICATION"
+                or not isinstance(record.get("pushTime"), str)
+            ):
+                raise MinijError("MiniJ returned invalid notification identity")
+            try:
+                pushed_at = datetime.strptime(record["pushTime"], "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                raise MinijError("MiniJ returned invalid notification time") from None
+            seen.add(message_id)
+            title = record.get("title")
+            notifications.append(
+                DeviceNotification(
+                    message_id,
+                    pushed_at,
+                    NOTIFICATION_EVENTS.get(title) if isinstance(title, str) else None,
+                )
+            )
+        return notifications

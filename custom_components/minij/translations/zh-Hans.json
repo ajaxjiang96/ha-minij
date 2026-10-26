@@ -114,6 +114,21 @@
       "cloud_control_authorized": {
         "name": "云端控制已授权"
       }
+    },
+    "event": {
+      "device_notification": {
+        "name": "设备通知",
+        "state_attributes": {
+          "event_type": {
+            "name": "通知类型",
+            "state": {
+              "wash_completed": "洗衣完成",
+              "cleaning_completed": "清洁完成",
+              "fault_reported": "故障提醒"
+            }
+          }
+        }
+      }
     }
   }
 }

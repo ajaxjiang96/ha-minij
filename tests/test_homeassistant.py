@@ -86,6 +86,11 @@ def api():
             new_callable=AsyncMock,
             return_value=[deepcopy(DEVICE)],
         ) as devices,
+        patch(
+            "custom_components.minij.api.MinijClient.async_get_notifications",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
     ):
         yield profile, devices
 
@@ -128,7 +133,7 @@ async def test_config_flow_entities_and_unload(hass, api):
     assert devices.await_count == 2  # Flow validation and one coordinator refresh.
 
     ids = entity_ids(hass)
-    assert len(ids) == 6
+    assert len(ids) == 7
     expected = {
         "current_status_alias": "resting",
         "current_mode": "标准",
@@ -136,6 +141,7 @@ async def test_config_flow_entities_and_unload(hass, api):
         "child_lock_status": "off",
         "cloud_control_authorization": "on",
         "program_remain_time": "unknown",
+        "device_notification": "unknown",
     }
     for key, value in expected.items():
         state = hass.states.get(ids[key])
@@ -302,7 +308,7 @@ async def test_sms_requires_submission_and_stores_only_token(hass, api, sms_api)
     assert entry.data == {"token": "sms-session-token"}
     assert entry.unique_id == "test-account"
     await hass.async_block_till_done()
-    assert len(entity_ids(hass)) == 6
+    assert len(entity_ids(hass)) == 7
 
 
 @pytest.mark.parametrize(
@@ -542,7 +548,7 @@ async def test_new_device_removal_and_return_does_not_duplicate_entities(hass, a
     await hass.async_block_till_done()
     registry = er.async_get(hass)
     original_ids = {e.id for e in registry.entities.values() if e.platform == "minij"}
-    assert len(original_ids) == 12
+    assert len(original_ids) == 14
     api[1].return_value = [second]
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
@@ -851,7 +857,7 @@ async def test_duration_lifecycle_and_unknown_model(hass, api):
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
     entities = er.async_get(hass).entities.values()
-    assert len([e for e in entities if e.platform == "minij"]) == 11
+    assert len([e for e in entities if e.platform == "minij"]) == 12
     assert not any(
         e.unique_id == "unsupported-model-device_program_remain_time" for e in entities
     )
@@ -934,3 +940,94 @@ async def test_cycle_diagnostics_raw_allowlist(hass, api):
     ]["reported"]
     assert "program_remain_time" not in report
     assert report["fault_code"] == "E-test"
+
+
+async def test_completion_events_baseline_recovery_and_standard_trigger(hass, api):
+    """Only new explicit messages trigger; recovery never replays stored completion."""
+    from datetime import datetime, timedelta
+
+    from homeassistant.components.event import DATA_COMPONENT
+    from homeassistant.components.event.trigger import EventReceivedTrigger
+    from homeassistant.helpers.trigger import TriggerConfig
+
+    from custom_components.minij.api import DeviceNotification, MinijError
+
+    def message(identifier, minute):
+        return DeviceNotification(
+            identifier,
+            datetime(2026, 1, 1) + timedelta(minutes=minute),
+            "wash_completed",
+        )
+
+    old = message("old", 0)
+    with patch(
+        "custom_components.minij.api.MinijClient.async_get_notifications",
+        new_callable=AsyncMock,
+        return_value=[old],
+    ) as messages:
+        entry = await configure(hass)
+        ids = entity_ids(hass)
+        event_id = ids["device_notification"]
+        entity = hass.data[DATA_COMPONENT].get_entity(event_id)
+        assert hass.states.get(event_id).state == "unknown"
+        from homeassistant.util.yaml import load_yaml
+
+        example = load_yaml(
+            str(Path(__file__).parents[1] / "examples/program-completed.yaml")
+        )
+        example_trigger = dict(example["triggers"][0])
+        assert example_trigger.pop("trigger") == "event.received"
+        example_trigger["target"] = {"entity_id": event_id}
+        config = await EventReceivedTrigger.async_validate_config(hass, example_trigger)
+        trigger = EventReceivedTrigger(
+            hass, TriggerConfig(key="event.received", **config)
+        )
+        action = AsyncMock()
+        remove = await trigger.async_attach_action(action, lambda payload, _: payload)
+        try:
+            fresh = message("fresh", 1)
+            messages.return_value = [fresh, old]
+            await entity.notifications.async_refresh()
+            await hass.async_block_till_done()
+            assert (
+                action.await_count == 1
+            )  # First real event after unknown is included.
+            stamp = hass.states.get(event_id).state
+            assert (
+                hass.states.get(event_id).attributes["event_type"] == "wash_completed"
+            )
+            assert "message_id" not in hass.states.get(event_id).attributes
+            await entity.notifications.async_refresh()
+            await hass.async_block_till_done()
+            assert action.await_count == 1
+            assert hass.states.get(event_id).state == stamp
+            messages.side_effect = MinijError("Synthetic notification outage")
+            await entity.notifications.async_refresh()
+            await hass.async_block_till_done()
+            assert hass.states.get(event_id).state == "unavailable"
+            assert hass.states.get(ids["current_status_alias"]).state == "resting"
+            messages.side_effect = None
+            messages.return_value = [message("during-outage", 2), fresh, old]
+            await entity.notifications.async_refresh()
+            await hass.async_block_till_done()
+            assert action.await_count == 1
+            # The restored old event timestamp is not a new completion.
+            assert hass.states.get(event_id).state == stamp
+            messages.return_value.insert(0, message("after-recovery", 3))
+            await entity.notifications.async_refresh()
+            await hass.async_block_till_done()
+            assert action.await_count == 2
+            assert await hass.config_entries.async_reload(entry.entry_id)
+            await hass.async_block_till_done()
+            assert entity_ids(hass) == ids
+            assert action.await_count == 2
+            # Status working->resting by itself never emits a completion event.
+            for alias in ("working", "resting"):
+                device = deepcopy(DEVICE)
+                device["deviceCharacterMap"]["current_status_alias"] = alias
+                api[1].return_value = [device]
+                await entry.runtime_data.async_refresh()
+                await hass.async_block_till_done()
+            assert action.await_count == 2
+        finally:
+            remove()
