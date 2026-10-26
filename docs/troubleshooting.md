@@ -1,85 +1,67 @@
-# Troubleshooting
+# 常见问题
 
-## Installation and authentication
+## 安装与登录
 
-Setup offers experimental phone/SMS login and an advanced existing-token
-method. SMS login uses the captured app request format but still needs live
-validation with the integration's WEBSITE headers. See [authentication evidence](authentication.md).
+当前提供手机验证码登录和已有 App 会话令牌两种方式。
+所有者反馈短信流程可用，但额外验证、冷却及会话轮换仍未完整确认。
+协议证据见[认证说明](authentication.md)。
 
-Submit an 11-digit mainland China mobile number without `+86` to send one SMS.
-Entering the SMS screen or opening reauthentication does not send anything.
-Codes and tokens are masked; only the validated token is saved.
+手机号为不带 `+86` 的 11 位中国大陆号码，只有提交号码才发短信。
+打开页面或重新认证本身不发短信。验证码和令牌遮挡显示，配置只保存令牌。
 
-- **Rate limited:** wait before requesting or exchanging a code again. There
-  is no verified server cooldown, so the integration invents no timer.
-- **SMS request unconfirmed/rejected:** a code may already have been sent.
-  Avoid repeated submissions. An unsupported challenge requires the MiniJ app
-  and advanced token setup; no challenge bypass is attempted.
-- **Login rejected/unconfirmed:** check the code and wait before retrying.
-  The integration makes no automatic retry or resend.
-- **Account access check failed after code acceptance:** Retry only repeats
-  profile/device reads using the returned token; it never exchanges the code again.
-- **Different account:** reauthentication stops without changing the saved
-  token. Start again with the original MiniJ account.
+- **请求频率受限**：等待后重试。尚未验证服务端冷却时长，不显示猜测的倒计时。
+- **短信结果被拒绝或无法确认**：可能已经发出短信，不要反复提交。
+  需要尚未支持的 App 验证时，改用自己的 App 会话令牌。
+- **登录被拒绝或无法确认**：核对验证码，等待后再试；没有自动重试或自动补发。
+- **兑换成功但账号/设备读取失败**：点击重试，只重复读取，不再次消耗验证码。
+- **账号不同**：流程停止，不替换原凭据。请使用原来的账号重新配置或认证。
 
-To change a number or request a new SMS, cancel the flow and start again.
-A new login's effect on other app sessions is still unknown. If SMS login is
-unsupported, use a session token from your own signed-in app. Do not post
-phone numbers, codes, or tokens in an issue or send them to a maintainer.
+更换号码或重发需取消后重新开始。新登录对其他 App 会话的影响仍待观察。
+不要向维护者发送手机号、验证码或令牌，也不要写入公开 Issue。
 
-If setup cannot connect, check Home Assistant's Internet access and try again
-later. A cloud outage is separate from a rejected session. MiniJ error
-`MJ01201018` means missing/invalid request headers in the observed response;
-it is not an established token-expiration code.
+无法连接时检查 HA 网络，稍后再试。云端故障与凭据被拒绝分开处理。
+此前 `MJ01201018` 对应缺失/无效请求头，不能当作令牌过期码。
 
-## Blank labels or old login instructions after an update
+## 更新后标签空白或仍显示旧文案
 
-If the new SMS flow shows blank menu rows, a raw `code` label, or the old
-"SMS login is not supported" description, first close the flow and refresh
-the HA browser with **Cmd+Shift+R** on macOS (Ctrl+Shift+R on Windows/Linux).
-Reopen the flow; do not request another SMS just to test the labels.
+若新短信流程出现空白菜单、原始 `code` 标签或“暂不支持短信登录”的旧说明：
 
-If the old text persists, verify that the entire integration folder was
-replaced, including `translations/en.json` and `translations/zh-Hans.json`,
-then restart Home Assistant and refresh the browser again. The current files
-contain menu labels for both methods and a translated SMS-code field. A
-private browser window can distinguish a browser cache problem from stale
-server files without deleting browser data or changing the HA config entry.
+1. 关闭流程，macOS 按 **Cmd+Shift+R**；Windows/Linux 按 **Ctrl+Shift+R**。
+2. 重新打开流程，仅检查文字，不必再发短信。
+3. 若仍不对，确认完整替换了 `translations/en.json` 和 `translations/zh-Hans.json`，
+   重启 HA 后再刷新浏览器。
+4. 可用无痕窗口区分浏览器缓存与服务器旧文件，无需删除集成条目。
 
-Home Assistant's [translation documentation](https://contributors.home-assistant.io/core/integrations/translations/)
-recommends restarting HA and clearing the browser cache when translation
-changes do not appear. The automated suite verifies these exact English and
-Chinese keys through HA's real translation loader; this is backend evidence,
-not proof of the browser's currently cached resources.
+[HA 翻译文档](https://contributors.home-assistant.io/core/integrations/translations/)
+也建议翻译未更新时重启并清理浏览器缓存。
+测试通过 HA 实际加载器检查中英文菜单和字段键；这不等于已确认浏览器当前缓存正确。
 
-## Device values
+## 设备状态
 
-The integration reports controller values. Idle program/process fields may
-describe a previous or default cycle rather than a selection in the mobile
-app. Remaining time is not exposed until its behavior is verified.
+程序和进程是控制器上报值，空闲时可能保留先前值，不一定等于 App 当前所选程序。
+剩余时间暂不提供。未知开关值显示为未知，未知状态别名原样保留。
+`device_exception` 不能单独说明具体故障。
 
-Unknown binary values appear as unknown, not off. Unknown status aliases are
-preserved. Record the public model, firmware, and corresponding app behavior
-when reporting a new value. Do not infer a specific appliance fault from the
-`device_exception` alias alone.
+云端刷新或绑定检查成功，不等于设备物理联网状态已经验证。
+同样，“运行 → 空闲”不等于已确认正常完成，不应直接用于完成通知。
+这不妨碍试用现有监测实体；无需为继续推进额外洗一轮。
 
-The current preview checks cloud freshness and whether the device remains
-bound. Appliance-offline semantics need further validation; reported status
-should not yet be treated as a verified physical connectivity indicator.
+## 更新与卸载
 
-## Updates and removal
+更新前备份 HA，替换完整的 `custom_components/minij` 并重启。
+更换凭据或构建时保留已有设备和实体标识。
+卸载时先在“设置 → 设备与服务”删除条目，再移除文件夹并重启。
 
-Back up your Home Assistant configuration before changing custom integrations.
-Replace the `custom_components/minij` directory and restart Home Assistant.
-Keep entity and device IDs unchanged when changing credentials or versions.
+## 诊断与正常使用观察
 
-To remove the integration, delete its config entry in Settings → Devices &
-services, remove `custom_components/minij`, and restart Home Assistant.
+安装含 `diagnostics.py` 的构建后重启，使用条目的**下载诊断信息**。
+MiniJ 部分只导出白名单缓存字段，不复制完整 API 响应。
+HA 外围还有系统元数据，分享前检查。
+云端失败时诊断保留缓存并标明刷新失败，实体显示不可用。
+详见[日常观察指南](cycle-validation.md)。
 
-## Bug reports
+## 提交问题
 
-Include integration and HA versions, installation type, public/internal model,
-device/Wi-Fi firmware, reproduction steps, and redacted errors. Remove tokens,
-verification codes, phone numbers, serials, account/device IDs, personal names,
-Wi-Fi details, IP addresses, and identifying URLs. Never upload APKs, raw
-account responses, or complete app/network captures.
+提供集成/HA 版本、安装类型、公开/内部型号、固件、复现步骤和去除敏感信息的错误。
+删除令牌、验证码、手机号、序列号、账号/设备 ID、姓名、Wi-Fi、IP 和识别性链接。
+不上传 APK、原始账号响应或完整日志/抓包。

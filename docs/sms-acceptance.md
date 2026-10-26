@@ -1,60 +1,42 @@
-# Live SMS acceptance on an existing Home Assistant installation
+# 手机验证码登录验证
 
-This is an account-owner test of the experimental flow, not a public-release
-claim. Automated fixtures do not establish live login compatibility. Keep the
-phone number, SMS code, token, and raw responses out of chat and GitHub.
+这是账号所有者的验证流程。自动化样例不代表所有账号都能通过真实登录。
+所有者已反馈当前短信流程可用；App 会话影响、重启持久性、挑战和冷却规则仍待观察。
+手机号、验证码、令牌只在 HA 或自己的 App 内输入，不发到聊天或 GitHub。
 
-## Install the test build
+## 安装开发构建
 
-1. Use the `feat/sms-authentication` branch of
-   [ha-minij](https://github.com/ajaxjiang96/ha-minij/tree/feat/sms-authentication).
-   Generate an install archive with `python scripts/package_integration.py`,
-   or use the locally prepared `dist/ha-minij-0.1.0.zip` from that branch.
-   This file identifies a development build, not a tagged release.
-2. Back up your HA configuration. Replace only the integration's
-   `custom_components/minij` folder with this build, then restart HA.
-   Do not delete the existing MiniJ entry or devices.
-3. Confirm the existing five entities still appear and retain their IDs,
-   custom names, area assignments, and automations. Record their IDs locally.
-   Confirm the existing MiniJ mobile app can still see the washer.
+1. 使用待验证 PR 的分支，执行 `python scripts/package_integration.py`，
+   或使用对应构建的 `dist/ha-minij-0.1.0.zip`。这是开发包，不是已发布标签。
+2. 备份 HA，完整替换 `custom_components/minij`，包含 `translations/`，重启 HA。
+   不删除已有条目和设备。
+3. 确认五个实体及其 ID、自定义名称、区域和自动化保持不变，在本地记录即可。
+   同时确认原来小吉 App 能看到洗衣机。
 
-## One deliberate login
+## 一次明确的登录操作
 
-1. Open **Settings → Devices & services → MiniJ**, open the existing entry's
-   three-dot menu, and choose **Reconfigure**. Choose **Phone and SMS code
-   (experimental)**. Opening either screen must not send an SMS.
-2. Enter the same account's mainland China mobile number: 11 digits without
-   `+86`. Submitting sends one SMS. A new login may invalidate another app
-   session; this remains unverified, so perform the test when that is acceptable.
-3. Enter the code only in HA's masked SMS field and submit once. Do not share
-   it in this chat. If MiniJ returns a challenge or an unconfirmed result, stop
-   and report only the HA error label. Avoid repeated sends or code guesses.
-4. If login is accepted but account/device reads fail, use **Retry**. This
-   repeats only those reads using the returned session; it sends no SMS and
-   does not exchange the code again. If the account has no bound appliances,
-   bind one using the official app before retrying.
-5. On success, confirm the existing entry reloads, all five entities update,
-   and the IDs/settings recorded earlier remain unchanged. Do not start or
-   change an appliance cycle just for this login test.
-6. Open the MiniJ mobile app and check whether its existing session still
-   works. Report only whether it stayed signed in or asked you to log in.
+1. 打开 **设置 → 设备与服务 → MiniJ → 已有条目 ⋮ → 重新配置**，
+   选择**手机验证码（实验功能）**。打开页面本身不发送短信。
+2. 输入同一账号的 11 位中国大陆手机号，不带 `+86`。提交才发送一条短信。
+   新登录是否会影响 App 会话尚未完整确认，请在可以接受时操作。
+3. 只在 HA 遮挡字段中输入验证码并提交一次。若出现挑战或结果无法确认，
+   先停止重复请求，只报告 HA 的错误提示，不分享验证码。
+4. 登录后若账号/设备读取失败，使用**重试**。它复用返回的令牌，不发短信，也不再次兑换验证码。
+   无绑定设备时，先用官方 App 绑定，再重试。
+5. 成功后确认原条目重新加载，五个实体更新，ID 和设置不变。
+   不需要为登录测试启动或改变洗涤。
+6. 打开小吉 App，记录原会话是否仍有效，或是否要求重新登录。
 
-## Restart and failure observations
+## 重启和后续观察
 
-Restart HA once after success and confirm the saved session loads without
-another SMS. This establishes restart persistence, not a token lifetime.
-If authentication naturally fails later, use the repair's Reauthenticate flow
-and the same account. Do not replace the saved token with a fake value, call
-logout, or revoke the live session to simulate expiry.
+成功后方便时重启一次 HA，确认无需再次发送短信即可恢复。
+这能证明重启持久性，不能证明令牌有效期。
+自然遇到认证失效时，再使用重新认证流程和原账号。
+不要写入假令牌、调用退出登录或撤销会话来制造过期。
 
-Wrong-account rejection, throttling, outages, and invalid response shapes are
-covered by automated tests. Do not trigger real rate limits or switch to
-another person's account for acceptance. The server's expiry duration, refresh
-mechanism, business expiry codes, and session-rotation rules remain unknown
-until observed.
+错误账号、限流、网络失败等已有自动化测试，不要人为触发真实限流或使用他人账号。
+服务端有效期、刷新机制、业务过期码和多会话轮换仍未知。
 
-Report: HA version, build commit, whether SMS arrived, the HA error label or
-success, five-entity visibility, unchanged entity IDs/settings, restart result,
-and whether the mobile app stayed signed in. No screenshots of credentials or
-raw logs are needed. A failed test leaves the original entry credentials
-unchanged; use advanced token Reconfigure if a fresh app token is needed.
+反馈内容：HA 版本、构建提交、短信是否收到、HA 提示或成功结果、五个实体及 ID/设置、
+重启结果、App 是否仍登录。无需上传凭据截图或原始日志。
+登录或账号验证被拒绝时不会替换原条目的凭据；如需要新 App 令牌，可选择高级令牌方式重新配置。

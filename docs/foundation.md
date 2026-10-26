@@ -1,65 +1,43 @@
-# Open-source foundation status
+# 开源基础状态
 
-Prepared 2026-10-26. The user selected `ajaxjiang96/ha-minij` as the public
-repository and explicitly requested its creation.
+记录日期：2026-10-26。公开仓库为
+[ajaxjiang96/ha-minij](https://github.com/ajaxjiang96/ha-minij)，由所有者明确要求创建。
 
-## Prepared locally
+## 已完成
 
-- Git initialized with a minimal main base and review branch
-  `feat/open-source-foundation`.
-- MIT license, authored source, sanitized synthetic tests, contribution
-  instructions, troubleshooting, and bug/model-report templates.
-- HACS metadata, maintainer, and documentation/issue URLs targeting the
-  requested repository. The public URLs are live.
-- User-supplied MiniJ app icon in the component's `brand/` folder, copied
-  unchanged. The obsolete placeholder artwork was removed.
-- Reproducible manual-install ZIP containing only runtime files.
-- Commit-pinned GitHub Actions for minimum/current released HA tests on
-  Linux, Ruff, hassfest, HACS validation, and package verification.
-- Dependabot configuration for action and Python dependency updates.
+- Git、MIT 许可证、原创集成代码、合成测试、贡献/排障说明和问题模板。
+- 真实仓库/维护者链接、HACS 元数据、用户提供且原样复制的小吉图标。
+- 只包含运行文件的手动安装 ZIP。
+- 固定提交的 GitHub Actions：最低/当前 HA、Ruff、hassfest、HACS 和打包校验。
+- Dependabot 更新；翻译与主要文档优先支持简体中文，保留英文界面资源。
+- APK、原始日志、凭据、抓包、本地工具和环境均被忽略；公开差异做敏感数据检查。
 
-Private analysis, APKs, raw logs, credentials, captures, local tooling, and
-environments remain ignored. Staged source is audited against known private
-credential/account/device values without printing those values.
+## 发布与合并
 
-## Publication
+公开仓库在代理稳定后通过用户已登录的 GitHub 浏览器创建。
+此前 EOF / `ERR_CONNECTION_CLOSED` 不能证明凭据无效。
+源码推送使用 SSH，并显式禁止密码提示及 Keychain。
 
-The public repository [ajaxjiang96/ha-minij](https://github.com/ajaxjiang96/ha-minij)
-was created through the user's signed-in GitHub browser session after the
-proxy stabilized. The earlier connection EOF and `ERR_CONNECTION_CLOSED`
-errors did not establish an invalid credential. SSH authentication succeeds
-with password prompts and Keychain use explicitly disabled.
+[基础 PR #1](https://github.com/ajaxjiang96/ha-minij/pull/1) 由用户合并为 `502f89d`，
+检查通过，Codex 对 `810a5ca` 审查无发现。
+[短信 PR #4](https://github.com/ajaxjiang96/ha-minij/pull/4) 已合并为 `128bfda`；
+随后主分支还合并了 Actions 依赖更新。
+[诊断 PR #5](https://github.com/ajaxjiang96/ha-minij/pull/5) 提供诊断和日常周期观察能力。
+PR 检查通过与实际合并是不同状态，发布前重新查询。
 
-Publication uses [foundation PR #1](https://github.com/ajaxjiang96/ha-minij/pull/1)
-from `feat/open-source-foundation`. The repository base contains its ignore
-rules and MIT license. PR #1 was merged by the user as `502f89d`. Both branch validation workflows
-passed, including HACS after repository topics were added. Codex review of
-`810a5ca` completed without findings. No tagged release has been published.
+目前尚未发布版本标签。合并不等于发布，也不等于 HACS 默认列表收录。
 
-## Linux validation
+## Linux 与凭据提示
 
-Initial image transfers failed during the proxy disruption. After recovery,
-the official Python image was downloaded with manifest, config, layer, and
-uncompressed layer digest verification, then imported into the local Docker
-daemon. Only component source, synthetic tests, test configuration, and test
-requirements are mounted read-only; private analysis and account files are excluded.
-The actual test result is recorded in [validation.md](validation.md).
+代理恢复后，官方 Python 镜像经 manifest、config、压缩层和解压层摘要核验后导入本地容器。
+基础测试在 Linux ARM64 完整退出 0，后续 Linux CI 也通过，详见[验证记录](validation.md)。
 
-The complete Linux command exited 0: Home Assistant 2026.10.4, Python 3.14.9,
-Ruff lint/format, and all 16 tests passed. The earlier macOS finalization
-failure did not reproduce in this Linux run.
+第一次 Docker 拉取触发已有凭据助手并被取消；没有输入密码。
+后续使用只含 `{}` 的独立 Docker 配置，不含凭据助手；没有修改用户全局 Docker 配置或 Keychain。
+macOS 解释器收尾故障未被掩盖，Linux 结果独立判断。
 
-The first public image pull invoked Docker's existing credential helper and
-was cancelled. Subsequent probes used an isolated configuration containing
-only `{}`, with no credentials or helpers. No password was entered and the
-user's global Docker configuration and Keychain were not changed.
+## 预览版与稳定版
 
-## Release boundary
-
-Inspect all hosted jobs and resolve failures before claiming green CI.
-The first stable release remains gated on the roadmap's authentication,
-state semantics, and independent installation evidence.
-
-The exact SMS login type is now confirmed as `login`. Independent login
-using the intended HA headers, challenge handling, and session lifetime
-still require deliberate account-owner validation; the current session was preserved.
+监测预览版可在写明限制后继续推进，不需要再等待一次正常完成。
+稳定版承诺仍受会话持久性、状态含义和独立安装证据限制。
+没有证据的完成、离线、倒计时或刷新机制不添加。发布前对确切提交检查 CI 和支持范围。

@@ -1,96 +1,84 @@
-# MiniJ for Home Assistant
+# 小吉 MiniJ · Home Assistant 集成
 
-<img src="custom_components/minij/brand/icon.png" alt="MiniJ app icon" width="80">
+<img src="custom_components/minij/brand/icon.png" alt="小吉 App 图标" width="80">
 
-An unofficial, read-only integration for MiniJ cloud-connected appliances.
-Verified with the **V6-XNB** wall-mounted washer/dryer (`minij.washer.x68`).
+非官方的小吉云端状态监测集成。目前已在 **V6-XNB 壁挂洗烘机**
+（内部型号 `minij.washer.x68`）上验证登录和状态读取。
 
-This is an advanced preview. Setup offers experimental phone/SMS login and
-an advanced session-token method. The SMS wire format comes from a successful
-app login; independent SMS login with this integration still needs live validation. The integration
-depends on MiniJ cloud and does not provide local control.
+这是可用于试用的**监测预览版**，依赖小吉云服务。仓库文档优先使用简体中文；
+HA 界面跟随用户的语言设置，提供简体中文和英文。
 
-## Features and support
+## 已支持的功能
 
-| Entity | Reported value |
+| 实体 | 内容 |
 | --- | --- |
-| Status | Controller status alias and original status label |
-| Reported program | Controller-reported program |
-| Reported process | Controller-reported cycle stage |
-| Child lock enabled | Explicit open/close state |
-| Cloud control authorized | Explicit authorization state |
+| 状态 | 设备上报的状态别名及原始状态文字 |
+| 设备上报程序 | 控制器上报的程序名称 |
+| 设备上报进程 | 控制器上报的阶段名称 |
+| 童锁已开启 | 明确的 open/close 状态 |
+| 云端控制已授权 | 明确的云端控制授权状态 |
 
-One shared request updates devices every 60 seconds. Unknown binary values
-remain unknown. Entity IDs are stable across token changes; rejected sessions
-trigger reauthentication for the same account.
+每 60 秒共享一次设备列表请求。未知开关值显示为未知；云端刷新失败或设备解绑时，
+实体显示为不可用。更换凭据不会改变设备和实体的唯一标识。
 
-V6-XNB was tested with Wi-Fi `1.0253` and device firmware `0 0003 1 0000`,
-including `resting`, `working`, and `device_exception` observations. Other
-models and firmware remain unverified.
+当前设备基线：Wi-Fi `1.0253`，设备固件 `0 0003 1 0000`。
+已观察到 `resting`、`working` 和 `device_exception`。其他型号和固件尚待验证。
 
-## Installation
+## 安装
 
-Requires Home Assistant **2026.10.4+**; the tested runtime is 2026.10.4.
+需要 **Home Assistant 2026.10.4 或更新版本**。
 
-1. Copy `custom_components/minij` into your HA configuration's
-   `custom_components/` directory. Alternatively generate a ZIP using
-   `python scripts/package_integration.py` and extract it into your HA
-   configuration directory.
-2. Restart Home Assistant.
-3. Open **Settings → Devices & services → Add integration → MiniJ**.
-4. Choose **Phone and SMS code (experimental)** or **Existing session token
-   (advanced)**. Phone login currently accepts mainland China mobile numbers
-   only: 11 digits without `+86`.
-5. For SMS login, submit your phone number to send one code, then enter that
-   code. Nothing sends automatically. If account/device validation fails
-   after login, Retry repeats only the status reads. Cancel and restart to
-   change the number or explicitly request another code; avoid repeated SMS.
+1. 将仓库中的 `custom_components/minij` 完整复制到 HA 配置目录的
+   `custom_components/` 下，包含 `translations/` 子目录。
+   也可执行 `python scripts/package_integration.py`，将生成的 ZIP 解压到 HA 配置目录。
+2. 重启 Home Assistant。
+3. 打开 **设置 → 设备与服务 → 添加集成 → MiniJ**。
+4. 选择**手机验证码（实验功能）**或**已有会话令牌（高级）**。
+5. 手机号使用已有小吉账号的 11 位中国大陆号码，不带 `+86`。
+   提交号码才会发送一条短信，再输入短信验证码即可。
 
-A new login may affect your MiniJ app session; this remains unverified.
-Unsupported challenges and rejected responses stop setup. If that happens,
-use your existing app token instead. The integration does not guess cooldowns,
-refresh tokens automatically, or log you out.
+验证码和令牌使用遮挡输入框。配置中只保存验证后的会话令牌，不保存手机号或验证码。
+账号与设备访问检查失败时，“重试”只重复读取，不会再次发送短信或兑换验证码。
+更换号码或重新获取短信需取消后重新开始，请避免重复请求。
 
-Tokens and SMS codes use masked fields. Only the validated session token is
-stored in the HA config entry; the phone number and SMS code are not saved.
-Reauthentication offers both methods and requires the original account. Use
-the entry’s **Reconfigure** menu to change authentication explicitly without
-removing devices.
-Never paste a token into an issue. The advanced extraction method and
-confirmed SMS request format are in [authentication.md](docs/authentication.md).
+已有条目可从 **⋮ → 重新配置** 更新认证，不需要删除设备；重新认证必须使用原账号。
+账号所有者反馈短信流程可用，但 App 会话是否受新登录影响、HA 重启后的长期会话行为、
+验证码冷却和额外验证仍未完整确认。遇到不支持的验证步骤，可使用自己的 App 会话令牌。
+详见[登录验证指南](docs/sms-acceptance.md)和[认证证据](docs/authentication.md)。
 
-Source repository: [ajaxjiang96/ha-minij](https://github.com/ajaxjiang96/ha-minij).
-The source layout and HACS metadata are prepared; this is not yet a tagged
-release or a default HACS listing.
+源码：[ajaxjiang96/ha-minij](https://github.com/ajaxjiang96/ha-minij)。
+HACS 元数据与验证已准备；目前尚未发布版本标签，也未进入 HACS 默认列表。
 
-## Known limitations
+## 当前限制
 
-- Phone/SMS setup is implemented but live acceptance, challenges, cooldowns,
-  token lifetime, session rotation, and renewal remain unverified. HTTP 401/403
-  on status reads triggers reauthentication; unknown business errors are not
-  guessed to mean expiry. No refresh endpoint is assumed.
-- Idle program/process fields may describe a previous/default cycle rather
-  than a selection in the mobile app.
-- Remaining time is omitted until countdown behavior and units are verified.
-- Current availability reflects cloud freshness and device binding; physical
-  offline behavior needs validation.
-- `device_exception` alone does not identify a specific appliance fault.
-- Controls, firmware management, LAN operation, and MQTT are outside this preview.
+- **运行后回到空闲，不等于已确认正常完成。** 取消、停止等情况尚未区分；
+  当前不提供完成事件或默认完成通知。
+- 空闲时的程序和进程可能保留先前值，不能仅凭“主洗”“脱水”等文字判断仍在运行。
+- 暂不提供剩余时间，单位及倒计时语义尚未确认。
+- 可用性表示云端读取和设备绑定情况，尚不能代表设备的物理联网状态。
+- `device_exception` 本身不能说明具体故障原因。
+- 未假设令牌有效期或刷新接口；状态读取收到 HTTP 401/403 时进入重新认证。
+- 当前不提供启停、程序选择、固件管理、局域网控制或 MQTT。
 
-See [troubleshooting](docs/troubleshooting.md) for errors, upgrades, and removal.
+这些限制不妨碍继续试用监测功能。无需为了推进预览版额外运行洗涤；
+有正常使用机会时，再补充验证即可。
 
-## Development and evidence
+## 诊断与支持
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development, tests, and redacted
-model reports. Automated tests need no app account or physical appliance.
+MiniJ 条目的 **下载诊断信息** 提供已缓存的型号、固件和白名单状态字段，
+不会额外轮询、发送短信或操作设备。MiniJ 数据部分不包含凭据或小吉标识符；
+HA 会在外围添加系统信息，分享前请检查。
 
-- [Roadmap](docs/roadmap.md)
-- [Foundation status](docs/foundation.md)
-- [Validation results and limits](docs/validation.md)
-- [Authentication](docs/authentication.md) and [live SMS test steps](docs/sms-acceptance.md)
-- [Native HTTP trace](docs/native-http.md) and [public web client](docs/web-protocol.md)
-- [Runtime evidence](docs/runtime.md) and [Rea tooling](docs/rea-setup.md)
+- [常见问题与更新方法](docs/troubleshooting.md)
+- [日常洗涤观察指南](docs/cycle-validation.md)
+- [路线图](docs/roadmap.md)
+- [测试结果与证据边界](docs/validation.md)
+- [开源基础状态](docs/foundation.md)
+- [开发与贡献](CONTRIBUTING.md)
 
-Authored source uses the [MIT license](LICENSE). The user-supplied MiniJ app
-icon and product names identify supported products; they are not relicensed
-as original project artwork. This project is not affiliated with MiniJ.
+技术调查记录：[总览](docs/investigation.md)、[原生 HTTP](docs/native-http.md)、
+[公开网页协议](docs/web-protocol.md)、[Android 运行证据](docs/runtime.md)、
+[REA 工具](docs/rea-setup.md)。这些历史研究记录暂保留英文，面向用户的指南优先维护简体中文。
+
+项目原创代码采用 [MIT 许可证](LICENSE)。用户提供的小吉图标和产品名称用于标识支持的产品，
+不作为项目原创作品重新授权。本项目与小吉官方无关联。

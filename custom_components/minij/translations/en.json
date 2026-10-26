@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect MiniJ",
-        "description": "Choose how to sign in. Phone/SMS login is experimental and still needs live validation.",
+        "description": "Choose how to sign in. Phone/SMS login is experimental. An owner reports it works; session behavior and additional verification remain under validation.",
         "menu_options": {
           "phone": "Phone and SMS code (experimental)",
           "token": "Existing session token (advanced)"

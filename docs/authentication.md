@@ -1,63 +1,62 @@
-# Authentication evidence and remaining session questions
+# 登录与会话：已知证据及未知项
 
-Target: supplied Android MiniJ 1.7.1 (111), user-owned V6-XNB. Findings combine the earlier native trace, public web client, and the already-saved app-scoped log from the user's successful login on **2026-10-26, Asia/Shanghai**. This pass only read existing files: it did not navigate the emulator, send SMS, log in, log out, replace tokens, call an API, or send appliance commands.
+目标为用户提供的小吉 Android 1.7.1（111）及 V6-XNB。
+证据包括原生 HTTP 构建逻辑、公开网页客户端、2026-10-26 用户成功登录时保存的 App 日志，
+以及用户随后对 HA 短信流程的反馈。原始日志和账号数据不公开。
 
-## Confirmed SMS login sequence
+## 已确认的请求
 
-| Step | Observed request | Evidence |
+| 操作 | 请求 | 证据 |
 | --- | --- | --- |
-| Request login code | `POST https://lilith.minij.com/api/captcha/sendSmsCaptcha`, JSON `{"phone":"<user input>","type":"login"}` | Runtime at 09:28:35–09:28:36: request URL at saved-log line 282/295, exact request fields at line 296, HTTP 200 at line 294. Native trace independently establishes POST and JSON body construction. |
-| Exchange SMS code | `POST https://lilith.minij.com/api/login/loginByPhone`, JSON `{"captcha":"<user-entered SMS code>","phone":"<user input>"}` | Runtime at 09:28:47: URL at line 435/445, exact fields at line 446, HTTP 200 at line 444. Cached `JIResponse` at line 448 reports `success: true` and a User containing a token. |
+| 获取验证码 | `POST https://lilith.minij.com/api/captcha/sendSmsCaptcha`，JSON 为 `phone` 和 `type: login` | 09:28:35–36 的成功 App 登录日志；URL 在本地日志 282/295 行、字段在 296 行、HTTP 200 在 294 行；原生追踪确认 POST/JSON |
+| 兑换验证码 | `POST https://lilith.minij.com/api/login/loginByPhone`，JSON 为 `phone` 和 `captcha` | 09:28:47 日志；URL 在 435/445 行、字段在 446 行、HTTP 200 在 444 行，448 行缓存响应显示 `success: true` 和含令牌的 User |
 
-The exact login SMS type is **`login`**. The earlier web-only `whitelist_group` finding is a different workflow and must not be used here. A redacted, structured extraction is saved in ignored `analysis/runtime/auth-events-redacted.json`; it retains source line numbers and times while excluding account identifiers, phone numbers, SMS codes, and token values. The raw log remains private under ignored `analysis/runtime/`.
+短信类型是 **`login`**。公开网页里的 `whitelist_group` 属于白名单登记，不能用于登录。
+本地脱敏提取保留在忽略目录 `analysis/runtime/auth-events-redacted.json`，不含手机号、验证码或令牌。
 
-SMS HTTP 200 alone does not expose its full business response; this log shows that the subsequent user-entered SMS code produced a successful login. The exact public-web header set and raw token transport are documented in [web-protocol.md](web-protocol.md). Those headers have been verified for authenticated profile/device reads by the root investigation, but an independent SMS/login call using `platform: WEBSITE` has **not** been tested. The native app's own headers for its successful SMS/login requests were not printed in this log.
+App 日志没有打印这两次请求的原生请求头，也未显示完整短信业务响应。
+公开网页头部及原始令牌传输方式见[协议记录](web-protocol.md)。
+现有令牌配合这些头部已通过 profile/设备读取验证；所有者随后反馈 HA 短信流程可用。
+这不代表所有账号、挑战、冷却或多会话行为都已验证。
 
-## Challenge, throttling, and error boundary
+## HA 实现
 
-The inspected login request contains only `phone` and `captcha`; the SMS request contains only `phone` and `type`. The log does not expose a challenge ID, image verification token, anti-abuse signature, or nonce for this successful sequence. This is a bounded observation of one login, not proof that challenges never occur. Retry limits, cooldown durations, SMS error codes, phone-number normalization/country-code rules, agreement requirements, and account lockout behavior remain unverified. Do not copy the whitelist web page's 60-second timer as an established login server limit.
+- 初次设置、重新认证和重新配置均提供手机验证码与高级令牌方式。
+- 只有用户提交号码时才请求一次短信；打开页面不发短信，兑换验证码不自动重试。
+- 未登录的 POST 不附带已有账号令牌，不跟随重定向。
+- 登录返回的令牌先通过账号身份及绑定设备读取，再保存；手机号和验证码不持久化。
+- 相同账号只生成一个条目；重新认证/配置拒绝其他账号，不静默替换设备。
+- 兑换成功后若读取暂时失败，仅在当前流程内保留令牌；“重试”不再次消耗验证码。
+- HTTP 429 单独提示限流；未知业务拒绝和额外挑战停止流程，不猜测过期码或冷却时间。
 
-## Session semantics established so far
+按[手机验证码验证指南](sms-acceptance.md)检查 HA 重启和 App 会话，已有条目无需删除。
 
-- Successful phone login supplies a token inside the User payload. The observed token is an opaque, 40-character hexadecimal string, not a JWT with locally decodable claims. No token value is included here.
-- The root investigation verified that this existing token, with the public web client headers, can read user profile and the user's bound appliance. Those reads did not require another SMS or login.
-- The saved profile response includes a `token` field. Its top-level envelope is `data`, `errorCode`, `errorMessage`, `success`, and `traceId`. No expiration or refresh-token field is exposed in that inspected profile shape.
-- Native code logs caching the successful User. This establishes caching activity, not its persistence duration or a refresh policy. Disk-cache behavior across a process/app restart was not exercised in this pass, to preserve the authenticated session.
-- The bounded saved-log and native printable-string searches found no literal `refreshToken`, `refresh_token`, `expiresIn`, `expires_in`, `expireTime`, or `expiration`. This does not prove the service lacks refresh or expiry semantics; those may be in protected shell code, use different names, or be server-controlled.
-- `login/logout` exists in native request routes. It was not called. Revocation, multiple simultaneous clients, session rotation on a new login, and logout effects on another client remain unknown.
-- The earlier token-only HTTP 401 / `MJ01201018` was resolved by adding source-observed client headers. It is evidence of a header validation failure, **not** an expired-token error code.
+## 仍未知的挑战和限流
 
-## Next capture needed for a Home Assistant login flow
+已观察成功请求中，短信体只有 `phone/type`，兑换体只有 `phone/captcha`。
+没有显示 challenge ID、图形验证码令牌、签名或 nonce；这仅是一条成功路径，
+不能据此断言永远不会出现挑战。
+重试次数、冷却时长、错误码、国际号码规则、账号锁定及协议要求仍未完整确认。
+HA 目前只接受已有证据支持的 11 位中国大陆号码，不复制白名单页面的 60 秒计时作为登录规则。
 
-The request schemas and login SMS type are now established. Before treating an SMS config flow as verified, capture one **separately user-authorized** end-to-end login with the intended client headers and record redacted HTTP status, business success/error code, response field names, and whether a challenge is returned. Avoid repeated SMS attempts. Creating a new login may affect the current session; its rotation behavior is still unknown, so retain the existing token-based path until this can be checked deliberately.
+## 会话证据
 
-For further passive app evidence, use the existing app PID (`adb -s emulator-5554 shell pidof -s com.minij.app`) and a bounded read-only `adb -s emulator-5554 logcat -d --pid=<current PID> -v threadtime`. Do not clear logcat, restart/clear the app, or log out just to obtain a new trace. Save raw output only under ignored `analysis/runtime/`; extract only route, field names, nonsecret enum constants, response status/error codes, and timestamps into reports. If a real user-triggered login is later needed, have the user operate the login UI and enter the SMS code; never include that code in recorded public fixtures.
+- 观察到的是 40 位十六进制不透明令牌，不是能本地解析到期时间的 JWT。
+- profile 响应含 `token`；外层字段为 `data/errorCode/errorMessage/success/traceId`，
+  已检查的结构未暴露有效期或刷新令牌。
+- App 日志显示缓存 User，但不能说明缓存时长或刷新策略。
+- 已有 App 令牌可独立读取账号和设备，不需要每次短信登录。
+- 对保存日志和原生可打印字符串的有限搜索未找到 `refreshToken`、`refresh_token`、
+  `expiresIn`、`expires_in`、`expireTime`、`expiration`；这不证明服务端没有刷新或过期机制。
+- 原生存在 `login/logout`，没有调用。退出对其他客户端的影响、轮换和多客户端规则仍未知。
+- `MJ01201018` 曾因请求头缺失/无效出现，补齐头部后恢复，不能当作会话过期码。
 
-For expiry, observe a naturally occurring authentication failure during an authorized read, retaining the HTTP status and MiniJ error code without exposing the token. Then verify the reauthentication flow with explicit user participation. Do not invent a token lifetime, refresh endpoint, automatic login retry, or expiry error mapping from the present evidence.
+## 后续观察边界
 
-## Experimental integration flow
+可以继续使用监测预览版，不必为补齐证据反复登录或等待另一轮洗涤。
+自然遇到认证失败时，记录 HTTP 状态及脱敏错误码，再由所有者完成重新认证。
+不调用退出、不撤销现有令牌，也不编造有效期、刷新接口或自动登录重试。
 
-The integration now implements the captured request schemas with the existing
-WEBSITE headers. It offers SMS and advanced token entry for both setup and
-reauthentication. No real SMS/login was made during implementation. HTTP 429
-has a dedicated rate-limit message; no cooldown duration, expiry code, or
-refresh endpoint is invented. Unknown business rejection/challenge responses
-stop setup. Unauthenticated POSTs omit any existing account token, prohibit
-redirects, and never retry automatically.
-
-A login token is validated through profile and bound-device reads before it is
-saved. The stable user ID prevents duplicate accounts and different-account
-reauthentication. Temporary read failures after code exchange retain the token
-only in the active flow so Retry does not consume the code a second time.
-Phone and code are not persisted. Existing entries need no data migration:
-they continue to contain only the same session-token field.
-
-Live acceptance still requires the account owner to submit their number and
-code in the HA forms, confirm device visibility, and check the existing app
-session afterward. Do not mark SMS compatibility, session rotation, expiry,
-or renewal verified based only on fixture tests. Never deliberately revoke
-or log out the existing session to manufacture an expiry observation.
-
-The entry’s Reconfigure menu uses the same account check without requiring
-expiry or entry removal. Follow [live acceptance](sms-acceptance.md) for the
-account-owner test and restart/app-session checks.
+若需补充 App 证据，可对现有 PID 做有界的 `adb logcat -d --pid=<PID>` 读取；
+不要为重新抓日志而清空日志、重启/清数据或退出 App。原始输出仅保留在忽略目录，
+公开报告只提取路由、字段名、非秘密枚举、响应状态及必要的相对时间。
