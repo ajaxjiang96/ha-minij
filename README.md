@@ -99,6 +99,7 @@ HA 会在外围添加系统信息，分享前请检查。
 - [安全的状态自动化示例](docs/automations.md)
 - [支持范围与反馈政策](docs/support.md)
 - [周期协议证据与缺口](docs/cycle-protocol.md)
+- [MIoT 规格与参考库分析](docs/miot-reference.md)
 - [日常洗涤观察指南](docs/cycle-validation.md)
 - [完整集成路线图](docs/roadmap.md)：可靠监测、周期自动化、控制与多型号扩展
 - [首个稳定版验收记录](docs/stable-release-checklist.md)
