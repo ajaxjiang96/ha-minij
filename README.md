@@ -29,8 +29,8 @@ HA 界面跟随用户的语言设置，提供简体中文和英文。
 ## 安装
 
 推荐按照 [HACS 自定义仓库指南](docs/hacs-installation.md)安装和更新。
-首个测试版 `0.1.1b1` 已发布；可下载的后续版本请查看
-[GitHub Releases](https://github.com/ajaxjiang96/ha-minij/releases)。
+首个监测稳定版 [v0.1.1](https://github.com/ajaxjiang96/ha-minij/releases/tag/v0.1.1) 已发布；
+后续版本请查看 [GitHub Releases](https://github.com/ajaxjiang96/ha-minij/releases)。
 以下是手动安装方式：
 
 需要 **Home Assistant 2026.10.4 或更新版本**。
@@ -82,7 +82,8 @@ HA 会在外围添加系统信息，分享前请检查。
 - [安全的状态自动化示例](docs/automations.md)
 - [支持范围与反馈政策](docs/support.md)
 - [日常洗涤观察指南](docs/cycle-validation.md)
-- [路线图](docs/roadmap.md)与[首个稳定版验收清单](docs/stable-release-checklist.md)
+- [完整集成路线图](docs/roadmap.md)：可靠监测、周期自动化、控制与多型号扩展
+- [首个稳定版验收记录](docs/stable-release-checklist.md)
 - [测试结果与证据边界](docs/validation.md)
 - [开源基础状态](docs/foundation.md)
 - [开发与贡献](CONTRIBUTING.md)
