@@ -1,5 +1,7 @@
 """Read-only MiniJ cloud API, verified against a V6-XNB."""
 
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import aiohttp
@@ -30,6 +32,25 @@ class MinijLoginError(MinijError):
 class MinijRateLimitError(MinijError):
     """MiniJ requests that the user wait before trying again."""
 
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        """Keep the server delay without retaining private response content."""
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+def _retry_after(value: str) -> float | None:
+    """Parse HTTP Retry-After seconds or dates; ignore invalid values."""
+    value = value.strip()
+    if value.isascii() and value.isdigit() and len(value) <= 10:
+        return float(value)
+    try:
+        date = parsedate_to_datetime(value)
+        if date.tzinfo is not None:
+            return max(0, (date - datetime.now(UTC)).total_seconds())
+    except ValueError, TypeError, OverflowError:
+        pass
+    return None
+
 
 class MinijClient:
     """Use an externally owned aiohttp session; never log credentials."""
@@ -53,7 +74,10 @@ class MinijClient:
                 allow_redirects=False,
             ) as response:
                 if response.status == 429:
-                    raise MinijRateLimitError("MiniJ rate limit reached")
+                    raise MinijRateLimitError(
+                        "MiniJ rate limit reached",
+                        _retry_after(response.headers.get("Retry-After", "")),
+                    )
                 if response.status in (401, 403):
                     if login_request:
                         raise MinijLoginError("MiniJ rejected the login request")

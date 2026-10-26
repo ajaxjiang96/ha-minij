@@ -28,7 +28,9 @@ async def service(unused_tcp_port, monkeypatch):
             state["request_body"] = await request.json()
         if "raw_body" in state:
             return web.Response(text=state["raw_body"], content_type="application/json")
-        return web.json_response(state["body"], status=state["status"])
+        return web.json_response(
+            state["body"], status=state["status"], headers=state.get("headers")
+        )
 
     app = web.Application()
     app.add_routes(routes)
@@ -225,3 +227,33 @@ async def test_missing_sms_phone_never_sends_a_request(service):
     with pytest.raises(api.MinijLoginError):
         await client.async_request_sms(" ")
     assert state["requests"] == []
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [("1800", 1800), ("0", 0), ("-10", None), ("nonsense", None), ("", None)],
+)
+async def test_rate_limit_retry_after_without_retrying(service, header, expected):
+    client, state = service
+    state["status"] = 429
+    state["headers"] = {"Retry-After": header}
+    with pytest.raises(api.MinijRateLimitError) as error:
+        await client.async_get_devices()
+    assert error.value.retry_after == expected
+    assert len(state["requests"]) == 1
+
+
+async def test_rate_limit_http_date(service):
+    from datetime import UTC, datetime, timedelta
+    from email.utils import format_datetime
+
+    client, state = service
+    state["status"] = 429
+    state["headers"] = {
+        "Retry-After": format_datetime(
+            datetime.now(UTC) + timedelta(hours=1), usegmt=True
+        )
+    }
+    with pytest.raises(api.MinijRateLimitError) as error:
+        await client.async_get_devices()
+    assert 3590 < error.value.retry_after <= 3600

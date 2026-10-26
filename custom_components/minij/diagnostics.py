@@ -48,5 +48,11 @@ async def async_get_config_entry_diagnostics(
         "last_cloud_refresh_success": (
             coordinator.last_update_success if coordinator is not None else None
         ),
+        "last_successful_cloud_refresh": (
+            coordinator.last_successful_refresh.isoformat()
+            if coordinator is not None
+            and coordinator.last_successful_refresh is not None
+            else None
+        ),
         "cached_devices": devices,
     }

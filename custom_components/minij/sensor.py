@@ -2,7 +2,11 @@
 
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -10,10 +14,13 @@ from . import MinijConfigEntry
 from .coordinator import MinijCoordinator
 from .entity import MinijEntity
 
+KNOWN_STATUSES = ("resting", "working", "device_exception")
+
 SENSORS = (
     SensorEntityDescription(
         key="current_status_alias",
         translation_key="status",
+        device_class=SensorDeviceClass.ENUM,
         name="Status",
         icon="mdi:washing-machine",
     ),
@@ -75,10 +82,26 @@ class MinijSensor(MinijEntity, SensorEntity):
         return value if isinstance(value, str) and value else None
 
     @property
+    def options(self) -> list[str] | None:
+        """Translate known aliases while accepting future raw values unchanged."""
+        if self.entity_description.key != "current_status_alias":
+            return None
+        options = list(KNOWN_STATUSES)
+        if (value := self.native_value) is not None and value not in options:
+            options.append(value)
+        return options
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Keep the server's status label alongside its machine-readable alias."""
         if self.entity_description.key == "current_status_alias":
             value = self.characteristics.get("current_status")
             if isinstance(value, str) and value:
                 return {"reported_status": value}
-        return None
+            return None
+        alias = self.characteristics.get("current_status_alias")
+        return {
+            "active_cycle_reported": (
+                alias == "working" if alias in ("working", "resting") else None
+            )
+        }

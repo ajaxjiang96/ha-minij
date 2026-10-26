@@ -19,7 +19,7 @@
       },
       "phone": {
         "title": "Request a MiniJ login code",
-        "description": "Enter your existing MiniJ account’s mainland China mobile number (11 digits, without +86). Submitting sends one SMS. A new login may affect your app session; this behavior is unverified. No SMS is sent automatically.",
+        "description": "Enter the 11-digit mainland China phone number of your existing MiniJ account, without +86. Submitting sends one SMS. The owner’s App stayed signed in during one test; other accounts and session rotation remain unverified. SMS is never sent automatically.",
         "data": {
           "phone": "Mobile number"
         }
@@ -75,13 +75,28 @@
   "entity": {
     "sensor": {
       "status": {
-        "name": "Status"
+        "name": "Status",
+        "state": {
+          "resting": "Idle",
+          "working": "Working",
+          "device_exception": "Device-reported exception"
+        }
       },
       "reported_program": {
-        "name": "Reported program"
+        "name": "Reported program",
+        "state_attributes": {
+          "active_cycle_reported": {
+            "name": "Active cycle reported"
+          }
+        }
       },
       "reported_process": {
-        "name": "Reported process"
+        "name": "Reported process",
+        "state_attributes": {
+          "active_cycle_reported": {
+            "name": "Active cycle reported"
+          }
+        }
       }
     },
     "binary_sensor": {
