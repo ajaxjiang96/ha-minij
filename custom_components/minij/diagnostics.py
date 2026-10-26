@@ -15,6 +15,10 @@ _CHARACTERISTICS = (
     "current_process",
     "child_lock_status",
     "cloud_control_authorization",
+    "current_process_alias",
+    "program_remain_time",
+    "program_total_time",
+    "fault_code",
 )
 
 
@@ -35,7 +39,7 @@ async def async_get_config_entry_diagnostics(
             summary["reported"] = {
                 key: value
                 for key in _CHARACTERISTICS
-                if isinstance(value := characters.get(key), str)
+                if type(value := characters.get(key)) in (str, int)
             }
             # Retain the raw flag without guessing physical connectivity.
             flag = device.get("newOrOldAppOnlineStatus")

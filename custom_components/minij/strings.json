@@ -97,6 +97,14 @@
             "name": "Active cycle reported"
           }
         }
+      },
+      "reported_remaining_time": {
+        "name": "Reported remaining time",
+        "state_attributes": {
+          "active_cycle_reported": {
+            "name": "Active cycle reported"
+          }
+        }
       }
     },
     "binary_sensor": {
