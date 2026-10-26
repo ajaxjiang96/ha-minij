@@ -1031,3 +1031,79 @@ async def test_completion_events_baseline_recovery_and_standard_trigger(hass, ap
             assert action.await_count == 2
         finally:
             remove()
+
+
+@pytest.mark.parametrize("recover_before_response", [False, True])
+async def test_inflight_notification_cannot_finish_reset_baseline(
+    hass, api, recover_before_response
+):
+    """Discard a response spanning any parent outage, even if already recovered."""
+    import asyncio
+    from datetime import datetime, timedelta
+
+    from homeassistant.components.event import DATA_COMPONENT
+
+    from custom_components.minij.api import DeviceNotification, MinijError
+
+    def message(identifier, minute):
+        return DeviceNotification(
+            identifier,
+            datetime(2026, 1, 1) + timedelta(minutes=minute),
+            "wash_completed",
+        )
+
+    old = message("old", 0)
+    with patch(
+        "custom_components.minij.api.MinijClient.async_get_notifications",
+        new_callable=AsyncMock,
+        return_value=[old],
+    ) as messages:
+        entry = await configure(hass)
+        ids = entity_ids(hass)
+        event_id = ids["device_notification"]
+        entity = hass.data[DATA_COMPONENT].get_entity(event_id)
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def delayed_response(_):
+            started.set()
+            await release.wait()
+            return [message("inflight", 1), old]
+
+        messages.side_effect = delayed_response
+        pending = hass.async_create_task(entity.notifications.async_refresh())
+        await started.wait()
+        try:
+            api[1].side_effect = MinijError(
+                "Parent outage while notification in flight"
+            )
+            await entry.runtime_data.async_refresh()
+            assert hass.states.get(event_id).state == "unavailable"
+            if recover_before_response:
+                api[1].side_effect = None
+                await entry.runtime_data.async_refresh()
+            release.set()
+            await pending
+            await hass.async_block_till_done()
+            if not recover_before_response:
+                api[1].side_effect = None
+                await entry.runtime_data.async_refresh()
+            # A stale response must not consume the recovery baseline.
+            messages.side_effect = None
+            messages.return_value = [
+                message("during-outage", 2),
+                message("inflight", 1),
+                old,
+            ]
+            await entity.notifications.async_refresh()
+            await hass.async_block_till_done()
+            assert hass.states.get(event_id).state == "unknown"
+            messages.return_value.insert(0, message("after-baseline", 3))
+            await entity.notifications.async_refresh()
+            await hass.async_block_till_done()
+            assert (
+                hass.states.get(event_id).attributes["event_type"] == "wash_completed"
+            )
+        finally:
+            release.set()
+            await pending

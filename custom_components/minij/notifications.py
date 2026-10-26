@@ -19,10 +19,17 @@ class NotificationTracker:
         self._seen: set[str] = set()
         self._watermark: datetime | None = None
         self._initialized = False
+        self._baseline_revision = 0
+
+    @property
+    def baseline_revision(self) -> int:
+        """Identify observation gaps spanning an asynchronous request."""
+        return self._baseline_revision
 
     def reset_baseline(self) -> None:
         """Suppress the first successful page after an observation gap."""
         self._initialized = False
+        self._baseline_revision += 1
 
     def consume(self, records: list[DeviceNotification]) -> list[DeviceNotification]:
         """Return only new, recognized messages at or beyond the time watermark."""
@@ -70,6 +77,7 @@ class MinijNotificationCoordinator(DataUpdateCoordinator[list[DeviceNotification
         ):
             self.tracker.reset_baseline()
             return []
+        baseline_revision = self.tracker.baseline_revision
         try:
             records = await self.parent.client.async_get_notifications(self.device_id)
         except MinijAuthError as err:
@@ -84,5 +92,13 @@ class MinijNotificationCoordinator(DataUpdateCoordinator[list[DeviceNotification
             raise UpdateFailed(
                 "Unable to fetch MiniJ notifications", retry_after=delay
             ) from err
+        if (
+            self.tracker.baseline_revision != baseline_revision
+            or not self.parent.last_update_success
+            or self.device_id not in self.parent.data
+        ):
+            # A response that spans an observation gap cannot establish recovery.
+            self.tracker.reset_baseline()
+            return []
         self._retry_delay = 60
         return self.tracker.consume(records)
