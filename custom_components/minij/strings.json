@@ -41,6 +41,14 @@
         "data": {
           "token": "Session token"
         }
+      },
+      "reconfigure": {
+        "title": "Reconnect MiniJ",
+        "description": "Sign in to the same MiniJ account. Existing devices and entity settings will be preserved.",
+        "menu_options": {
+          "phone": "Phone and SMS code (experimental)",
+          "token": "Existing session token (advanced)"
+        }
       }
     },
     "error": {
@@ -60,7 +68,8 @@
       "already_configured": "This MiniJ account is already configured.",
       "reauth_successful": "MiniJ authentication was updated.",
       "wrong_account": "This login belongs to a different MiniJ account. Start reauthentication again using the original account.",
-      "invalid_auth": "MiniJ rejected the new session. Start again to sign in."
+      "invalid_auth": "MiniJ rejected the new session. Start again to sign in.",
+      "reconfigure_successful": "MiniJ authentication was updated."
     }
   },
   "entity": {

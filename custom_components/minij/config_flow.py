@@ -4,7 +4,12 @@ from collections.abc import Mapping
 from typing import Any
 
 import probatio
-from homeassistant.config_entries import SOURCE_REAUTH, ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    SOURCE_REAUTH,
+    SOURCE_RECONFIGURE,
+    ConfigFlow,
+    ConfigFlowResult,
+)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     TextSelector,
@@ -74,8 +79,12 @@ class MinijConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _async_finish(self, user_id: str, token: str) -> ConfigFlowResult:
         """Create an account or update credentials without replacing its identity."""
-        if self.source == SOURCE_REAUTH:
-            entry = self._get_reauth_entry()
+        if self.source in (SOURCE_REAUTH, SOURCE_RECONFIGURE):
+            entry = (
+                self._get_reauth_entry()
+                if self.source == SOURCE_REAUTH
+                else self._get_reconfigure_entry()
+            )
             if user_id != entry.unique_id:
                 return self.async_abort(reason="wrong_account")
             return self.async_update_reload_and_abort(
@@ -189,4 +198,12 @@ class MinijConfigFlow(ConfigFlow, domain=DOMAIN):
         """Choose how to reconnect the original account."""
         return self.async_show_menu(
             step_id="reauth_confirm", menu_options=["phone", "token"]
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Allow an explicit sign-in change without removing a working entry."""
+        return self.async_show_menu(
+            step_id="reconfigure", menu_options=["phone", "token"]
         )

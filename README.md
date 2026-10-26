@@ -53,7 +53,9 @@ refresh tokens automatically, or log you out.
 
 Tokens and SMS codes use masked fields. Only the validated session token is
 stored in the HA config entry; the phone number and SMS code are not saved.
-Reauthentication offers both methods and requires the original account.
+Reauthentication offers both methods and requires the original account. Use
+the entry’s **Reconfigure** menu to change authentication explicitly without
+removing devices.
 Never paste a token into an issue. The advanced extraction method and
 confirmed SMS request format are in [authentication.md](docs/authentication.md).
 
@@ -85,7 +87,7 @@ model reports. Automated tests need no app account or physical appliance.
 - [Roadmap](docs/roadmap.md)
 - [Foundation status](docs/foundation.md)
 - [Validation results and limits](docs/validation.md)
-- [Authentication](docs/authentication.md)
+- [Authentication](docs/authentication.md) and [live SMS test steps](docs/sms-acceptance.md)
 - [Native HTTP trace](docs/native-http.md) and [public web client](docs/web-protocol.md)
 - [Runtime evidence](docs/runtime.md) and [Rea tooling](docs/rea-setup.md)
 

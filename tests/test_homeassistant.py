@@ -382,7 +382,8 @@ async def test_read_retry_does_not_exchange_code_twice(hass, api, sms_api):
     await hass.async_block_till_done()
 
 
-async def test_sms_reauth_preserves_registry_and_account(hass, api, sms_api):
+@pytest.mark.parametrize("source", ["reauth", "reconfigure"])
+async def test_sms_reauth_preserves_registry_and_account(hass, api, sms_api, source):
     entry = await configure(hass)
     registry = er.async_get(hass)
     ids = entity_ids(hass)
@@ -391,7 +392,7 @@ async def test_sms_reauth_preserves_registry_and_account(hass, api, sms_api):
     before = {e.id for e in registry.entities.values() if e.platform == "minij"}
     result = await hass.config_entries.flow.async_init(
         "minij",
-        context={"source": "reauth", "entry_id": entry.entry_id},
+        context={"source": source, "entry_id": entry.entry_id},
         data=entry.data,
     )
     assert result["type"] == FlowResultType.MENU
@@ -405,7 +406,7 @@ async def test_sms_reauth_preserves_registry_and_account(hass, api, sms_api):
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"code": "001234"}
     )
-    assert result["reason"] == "reauth_successful"
+    assert result["reason"] == f"{source}_successful"
     await hass.async_block_till_done()
     assert entry.data == {"token": "sms-session-token"}
     assert entry.unique_id == "test-account"
@@ -414,12 +415,13 @@ async def test_sms_reauth_preserves_registry_and_account(hass, api, sms_api):
     assert registry.async_get(status_id).name == "My washer state"
 
 
-async def test_sms_reauth_rejects_different_account(hass, api, sms_api):
+@pytest.mark.parametrize("source", ["reauth", "reconfigure"])
+async def test_sms_reauth_rejects_different_account(hass, api, sms_api, source):
     entry = await configure(hass)
     api[0].return_value = {"userId": "different-account"}
     result = await hass.config_entries.flow.async_init(
         "minij",
-        context={"source": "reauth", "entry_id": entry.entry_id},
+        context={"source": source, "entry_id": entry.entry_id},
         data=entry.data,
     )
     result = await hass.config_entries.flow.async_configure(

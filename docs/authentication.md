@@ -57,3 +57,7 @@ code in the HA forms, confirm device visibility, and check the existing app
 session afterward. Do not mark SMS compatibility, session rotation, expiry,
 or renewal verified based only on fixture tests. Never deliberately revoke
 or log out the existing session to manufacture an expiry observation.
+
+The entry’s Reconfigure menu uses the same account check without requiring
+expiry or entry removal. Follow [live acceptance](sms-acceptance.md) for the
+account-owner test and restart/app-session checks.

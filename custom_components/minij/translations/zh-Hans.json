@@ -41,6 +41,14 @@
         "data": {
           "token": "会话令牌"
         }
+      },
+      "reconfigure": {
+        "title": "重新连接小吉",
+        "description": "请登录原来的小吉账号。设备和实体设置将会保留。",
+        "menu_options": {
+          "phone": "手机验证码（实验功能）",
+          "token": "已有会话令牌（高级）"
+        }
       }
     },
     "error": {
@@ -60,7 +68,8 @@
       "already_configured": "此小吉账号已配置。",
       "reauth_successful": "小吉认证已更新。",
       "wrong_account": "此次登录属于其他小吉账号。请重新开始认证并使用原来的账号。",
-      "invalid_auth": "小吉拒绝了新会话，请重新开始登录。"
+      "invalid_auth": "小吉拒绝了新会话，请重新开始登录。",
+      "reconfigure_successful": "小吉认证已更新。"
     }
   },
   "entity": {
