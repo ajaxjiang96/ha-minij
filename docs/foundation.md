@@ -30,8 +30,10 @@ proxy stabilized. The earlier connection EOF and `ERR_CONNECTION_CLOSED`
 errors did not establish an invalid credential. SSH authentication succeeds
 with password prompts and Keychain use explicitly disabled.
 
-Publication uses a review branch and pull request; no merge or release is
-performed as part of this foundation work.
+Publication uses [foundation PR #1](https://github.com/ajaxjiang96/ha-minij/pull/1)
+from `feat/open-source-foundation`. The repository base contains its ignore
+rules and MIT license. Integration code remains in the PR; no merge or release
+is performed as part of this foundation work.
 
 ## Linux validation
 

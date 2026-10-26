@@ -28,7 +28,7 @@ This can run alongside authentication and status research.
 
 - [x] Initialize Git and establish intended repository/maintainer: `ajaxjiang96/ha-minij`.
 - [x] Create the requested public repository `ajaxjiang96/ha-minij`.
-- [ ] Open and validate the foundation PR before merging.
+- [ ] Validate [foundation PR #1](https://github.com/ajaxjiang96/ha-minij/pull/1) before merging.
 - [ ] Select an open-source license and add `LICENSE`; include only authored integration code, documentation, and sanitized fixtures in the initial history. Keep APKs, decompilation, account logs, tokens, network identifiers, and raw responses out of publication.
 - [ ] Separate user installation/support instructions from reverse-engineering notes; remove workstation-specific prerequisites from the normal setup path.
 - [ ] Add issue templates for bugs and model-support reports, contribution instructions, and a documented method for submitting redacted evidence.
