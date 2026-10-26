@@ -1,4 +1,4 @@
-"""Read-only MiniJ cloud API, verified against a V6-XNB."""
+"""MiniJ cloud reads and a narrowly scoped experimental child-lock command."""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -80,7 +80,7 @@ class MinijClient:
         self,
         method: str,
         route: str,
-        body: dict[str, str] | None = None,
+        body: dict[str, Any] | None = None,
         *,
         login_request: bool = False,
     ) -> Any:
@@ -216,3 +216,18 @@ class MinijClient:
                 )
             )
         return notifications
+
+    async def async_set_child_lock(self, device_id: str, enabled: bool) -> None:
+        """Submit one explicit single-bucket command without retries or redirects."""
+        if not isinstance(device_id, str) or not device_id or type(enabled) is not bool:
+            raise MinijError("Invalid child-lock command")
+        await self._request(
+            "POST",
+            "device/switchBasicFunction",
+            {
+                "deviceId": device_id,
+                "basicFunction": "childLock",
+                "onOff": enabled,
+                "bucketCode": "",
+            },
+        )

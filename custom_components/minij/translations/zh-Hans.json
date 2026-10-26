@@ -129,6 +129,40 @@
           }
         }
       }
+    },
+    "switch": {
+      "child_lock_control": {
+        "name": "童锁控制（实验）"
+      }
+    }
+  },
+  "exceptions": {
+    "control_read_failed": {
+      "message": "无法确认最新设备状态，未发送童锁指令。"
+    },
+    "control_unsupported": {
+      "message": "此型号、固件或桶配置尚未验证童锁控制。"
+    },
+    "control_not_authorized": {
+      "message": "设备未上报云端控制授权，请先在机器上确认授权。"
+    },
+    "control_not_idle": {
+      "message": "当前测试版只允许在设备明确空闲时验证童锁。"
+    },
+    "control_unknown_lock": {
+      "message": "童锁状态未知，未发送指令。"
+    },
+    "control_auth_failed": {
+      "message": "小吉拒绝了认证，请使用原账号重新认证；未自动重发指令。"
+    },
+    "control_rate_limited": {
+      "message": "小吉限制了请求频率，未自动重发指令。请等待后再检查 App。"
+    },
+    "control_send_uncertain": {
+      "message": "无法确认童锁请求结果，指令可能已被接收。请查看机器和 App，勿反复点击。"
+    },
+    "control_not_confirmed": {
+      "message": "童锁请求已被云端接收，但最新读取尚未确认目标状态。请查看机器和 App，未自动重发。"
     }
   }
 }

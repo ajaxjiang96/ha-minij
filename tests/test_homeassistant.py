@@ -92,7 +92,11 @@ def api():
             return_value=[],
         ),
     ):
-        yield profile, devices
+        with patch(
+            "custom_components.minij.api.MinijClient.async_set_child_lock",
+            new_callable=AsyncMock,
+        ):
+            yield profile, devices
 
 
 async def configure(hass):
@@ -113,13 +117,13 @@ async def configure(hass):
     return entry
 
 
-def entity_ids(hass):
+def entity_ids(hass, *, include_disabled=False):
     """Look up actual assigned entity IDs through the real registry."""
     registry = er.async_get(hass)
     return {
         entry.unique_id.removeprefix("washer-test-device_"): entry.entity_id
         for entry in registry.entities.values()
-        if entry.platform == "minij"
+        if entry.platform == "minij" and (include_disabled or entry.disabled_by is None)
     }
 
 
@@ -548,12 +552,12 @@ async def test_new_device_removal_and_return_does_not_duplicate_entities(hass, a
     await hass.async_block_till_done()
     registry = er.async_get(hass)
     original_ids = {e.id for e in registry.entities.values() if e.platform == "minij"}
-    assert len(original_ids) == 14
+    assert len(original_ids) == 16
     api[1].return_value = [second]
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
     for entity in registry.entities.values():
-        if entity.platform == "minij":
+        if entity.platform == "minij" and entity.disabled_by is None:
             state = hass.states.get(entity.entity_id)
             if entity.unique_id.startswith("washer-test-device_"):
                 assert state.state == "unavailable"
@@ -568,7 +572,7 @@ async def test_new_device_removal_and_return_does_not_duplicate_entities(hass, a
     assert all(
         hass.states.get(e.entity_id).state != "unavailable"
         for e in registry.entities.values()
-        if e.platform == "minij"
+        if e.platform == "minij" and e.disabled_by is None
     )
 
 
@@ -857,7 +861,7 @@ async def test_duration_lifecycle_and_unknown_model(hass, api):
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
     entities = er.async_get(hass).entities.values()
-    assert len([e for e in entities if e.platform == "minij"]) == 12
+    assert len([e for e in entities if e.platform == "minij"]) == 13
     assert not any(
         e.unique_id == "unsupported-model-device_program_remain_time" for e in entities
     )
@@ -1107,3 +1111,251 @@ async def test_inflight_notification_cannot_finish_reset_baseline(
         finally:
             release.set()
             await pending
+
+
+async def enable_child_lock_control(hass, entry):
+    """Enable the registered experimental entity and reload like HA settings."""
+    registry = er.async_get(hass)
+    control_id = entity_ids(hass, include_disabled=True)["child_lock_control"]
+    registry.async_update_entity(control_id, disabled_by=None)
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    return control_id
+
+
+async def test_child_lock_disabled_by_default_and_verified_round_trip(hass, api):
+    """Loading never writes; only explicit enabled actions send one command."""
+    from custom_components.minij.api import MinijClient
+
+    command = MinijClient.async_set_child_lock
+    entry = await configure(hass)
+    original = entity_ids(hass)
+    all_ids = entity_ids(hass, include_disabled=True)
+    control_id = all_ids["child_lock_control"]
+    assert er.async_get(hass).async_get(control_id).disabled_by is not None
+    assert hass.states.get(control_id) is None
+    command.assert_not_awaited()
+    assert len(all_ids) == 8 and len(original) == 7
+    await enable_child_lock_control(hass, entry)
+    assert all(entity_ids(hass)[key] == value for key, value in original.items())
+    assert hass.states.get(control_id).state == "off"
+
+    async def apply_command(device_id, enabled):
+        assert device_id == DEVICE["deviceId"]
+        updated = deepcopy(api[1].return_value)
+        updated[0]["deviceCharacterMap"]["child_lock_status"] = (
+            "open" if enabled else "close"
+        )
+        api[1].return_value = updated
+
+    command.side_effect = apply_command
+    for action, expected in (("turn_on", "on"), ("turn_off", "off")):
+        before = api[1].await_count
+        await hass.services.async_call(
+            "switch", action, {"entity_id": control_id}, blocking=True
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get(control_id).state == expected
+        assert api[1].await_count == before + 2  # Fresh preflight and one readback.
+    assert command.await_count == 2
+    before = command.await_count
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": control_id}, blocking=True
+    )
+    assert command.await_count == before  # Already at target: no command.
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error_key"),
+    [
+        ("firmwareVersion", "unverified-firmware", "control_unsupported"),
+        ("wifiVersion", None, "control_unsupported"),
+        ("deviceModel", "unknown-model", "control_unsupported"),
+        ("bucketCode", "other-bucket", "control_unsupported"),
+        ("cloud_control_authorization", "close", "control_not_authorized"),
+        ("current_status_alias", "working", "control_not_idle"),
+        ("current_status_alias", "future-status", "control_not_idle"),
+        ("child_lock_status", None, "control_unknown_lock"),
+    ],
+)
+async def test_child_lock_fresh_preflight_rejects_without_writing(
+    hass, api, field, value, error_key
+):
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.minij.api import MinijClient
+
+    entry = await configure(hass)
+    control_id = await enable_child_lock_control(hass, entry)
+    changed = deepcopy(DEVICE)
+    if field in ("firmwareVersion", "wifiVersion", "deviceModel", "bucketCode"):
+        changed[field] = value
+    else:
+        changed["deviceCharacterMap"][field] = value
+    api[1].return_value = [changed]  # Cached state still looked eligible before action.
+    with pytest.raises(HomeAssistantError) as result:
+        await hass.services.async_call(
+            "switch", "turn_on", {"entity_id": control_id}, blocking=True
+        )
+    assert result.value.translation_key == error_key
+    MinijClient.async_set_child_lock.assert_not_awaited()
+
+
+async def test_child_lock_preflight_outage_and_unconfirmed_ack(hass, api):
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.minij.api import MinijClient, MinijError
+
+    entry = await configure(hass)
+    control_id = await enable_child_lock_control(hass, entry)
+    api[1].side_effect = MinijError("Synthetic outage")
+    with pytest.raises(HomeAssistantError) as result:
+        await hass.services.async_call(
+            "switch", "turn_on", {"entity_id": control_id}, blocking=True
+        )
+    assert result.value.translation_key == "control_read_failed"
+    MinijClient.async_set_child_lock.assert_not_awaited()
+    api[1].side_effect = None
+    await entry.runtime_data.async_refresh()
+    with pytest.raises(HomeAssistantError) as result:
+        await hass.services.async_call(
+            "switch", "turn_on", {"entity_id": control_id}, blocking=True
+        )
+    assert result.value.translation_key == "control_not_confirmed"
+    assert MinijClient.async_set_child_lock.await_count == 1
+    assert hass.states.get(control_id).state == "off"  # No optimistic success.
+
+
+@pytest.mark.parametrize(
+    ("error_kind", "error_key"),
+    [
+        ("auth", "control_auth_failed"),
+        ("rate", "control_rate_limited"),
+        ("uncertain", "control_send_uncertain"),
+    ],
+)
+async def test_child_lock_command_errors_do_not_retry_or_change_state(
+    hass, api, error_kind, error_key
+):
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.minij.api import (
+        MinijAuthError,
+        MinijClient,
+        MinijError,
+        MinijRateLimitError,
+    )
+
+    entry = await configure(hass)
+    control_id = await enable_child_lock_control(hass, entry)
+    errors = {
+        "auth": MinijAuthError,
+        "rate": MinijRateLimitError,
+        "uncertain": MinijError,
+    }
+    MinijClient.async_set_child_lock.side_effect = errors[error_kind](
+        "private-error-canary"
+    )
+    with pytest.raises(HomeAssistantError) as result:
+        await hass.services.async_call(
+            "switch", "turn_on", {"entity_id": control_id}, blocking=True
+        )
+    await hass.async_block_till_done()
+    assert result.value.translation_key == error_key
+    assert "private-error-canary" not in str(result.value)
+    assert MinijClient.async_set_child_lock.await_count == 1
+    assert hass.states.get(control_id).state == "off"
+    flows = hass.config_entries.flow.async_progress_by_handler("minij")
+    assert bool(flows) is (error_kind == "auth")
+
+
+async def test_child_lock_serializes_duplicate_requests(hass, api):
+    import asyncio
+
+    from custom_components.minij.api import MinijClient
+
+    entry = await configure(hass)
+    control_id = await enable_child_lock_control(hass, entry)
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def command(_, enabled):
+        started.set()
+        await release.wait()
+        updated = deepcopy(api[1].return_value)
+        updated[0]["deviceCharacterMap"]["child_lock_status"] = "open"
+        api[1].return_value = updated
+
+    MinijClient.async_set_child_lock.side_effect = command
+    first = hass.async_create_task(
+        hass.services.async_call(
+            "switch", "turn_on", {"entity_id": control_id}, blocking=True
+        )
+    )
+    await started.wait()
+    second = hass.async_create_task(
+        hass.services.async_call(
+            "switch", "turn_on", {"entity_id": control_id}, blocking=True
+        )
+    )
+    release.set()
+    await asyncio.gather(first, second)
+    await hass.async_block_till_done()
+    assert MinijClient.async_set_child_lock.await_count == 1
+    assert hass.states.get(control_id).state == "on"
+
+
+async def test_child_lock_unload_during_preflight_never_writes(hass, api):
+    import asyncio
+
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.minij.api import MinijClient
+
+    entry = await configure(hass)
+    control_id = await enable_child_lock_control(hass, entry)
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def delayed_read():
+        started.set()
+        await release.wait()
+        return [deepcopy(DEVICE)]
+
+    api[1].side_effect = delayed_read
+    pending = hass.async_create_task(
+        hass.services.async_call(
+            "switch", "turn_on", {"entity_id": control_id}, blocking=True
+        )
+    )
+    await started.wait()
+    try:
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        release.set()
+        with pytest.raises(HomeAssistantError) as result:
+            await pending
+        assert result.value.translation_key == "control_read_failed"
+        MinijClient.async_set_child_lock.assert_not_awaited()
+    finally:
+        release.set()
+
+
+@pytest.mark.parametrize("language", ["en", "zh-Hans"])
+async def test_child_lock_exception_and_entity_translations(hass, language):
+    from homeassistant.helpers.translation import async_get_translations
+
+    entities = await async_get_translations(hass, language, "entity", {"minij"})
+    assert entities["component.minij.entity.switch.child_lock_control.name"]
+    exceptions = await async_get_translations(hass, language, "exceptions", {"minij"})
+    for key in (
+        "control_read_failed",
+        "control_unsupported",
+        "control_not_authorized",
+        "control_not_idle",
+        "control_unknown_lock",
+        "control_auth_failed",
+        "control_rate_limited",
+        "control_send_uncertain",
+        "control_not_confirmed",
+    ):
+        assert exceptions[f"component.minij.exceptions.{key}.message"]
