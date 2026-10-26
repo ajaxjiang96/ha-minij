@@ -26,6 +26,11 @@ HA 界面跟随用户的语言设置，提供简体中文和英文。
 
 ## 安装
 
+推荐按照 [HACS 自定义仓库指南](docs/hacs-installation.md)安装和更新。
+当前准备的首个测试版为 `0.1.1b1`；实际是否发布请查看
+[GitHub Releases](https://github.com/ajaxjiang96/ha-minij/releases)。
+以下是手动安装方式：
+
 需要 **Home Assistant 2026.10.4 或更新版本**。
 
 1. 将仓库中的 `custom_components/minij` 完整复制到 HA 配置目录的
@@ -47,7 +52,8 @@ HA 界面跟随用户的语言设置，提供简体中文和英文。
 详见[登录验证指南](docs/sms-acceptance.md)和[认证证据](docs/authentication.md)。
 
 源码：[ajaxjiang96/ha-minij](https://github.com/ajaxjiang96/ha-minij)。
-HACS 元数据与验证已准备；目前尚未发布版本标签，也未进入 HACS 默认列表。
+HACS 自定义仓库无需等待默认列表收录；目前尚未发布版本标签。
+测试版的功能与限制见[发布说明](docs/releases/0.1.1b1.md)。
 
 ## 当前限制
 
