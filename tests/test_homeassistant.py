@@ -628,3 +628,55 @@ async def test_diagnostics_without_loaded_runtime(hass, api):
     assert result["entry_state"] == "not_loaded"
     assert result["last_cloud_refresh_success"] is None
     assert result["cached_devices"] == []
+
+
+async def test_metadata_refresh_preserves_user_settings_and_identity(hass, api):
+    """Cloud rename/firmware changes update without reload or lost customizations."""
+    from homeassistant.helpers import area_registry as ar
+
+    entry = await configure(hass)
+    ids = entity_ids(hass)
+    registry = dr.async_get(hass)
+    device = registry.async_get_device_by_identifier(
+        ("minij", "washer-test-device"), entry.entry_id
+    )
+    await ar.async_load(hass)
+    area = ar.async_get(hass).async_create("Test laundry")
+    registry.async_update_device(device.id, name_by_user="My washer", area_id=area.id)
+    er.async_get(hass).async_update_entity(
+        ids["current_status_alias"], name="My status"
+    )
+    old_entity_ids = {
+        e.id for e in er.async_get(hass).entities.values() if e.platform == "minij"
+    }
+    changed = deepcopy(DEVICE)
+    changed.update(
+        deviceNickName="New cloud name",
+        deviceModel="minij.washer.x68-reported",
+        wifiVersion="test-wifi-2",
+        firmwareVersion="test-firmware-2",
+    )
+    api[1].return_value = [changed]
+    calls = api[1].await_count
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    updated = registry.async_get(device.id)
+    assert updated.name == "New cloud name"
+    assert updated.model == "minij.washer.x68-reported"
+    assert updated.sw_version == "test-wifi-2 test-firmware-2"
+    assert updated.name_by_user == "My washer"
+    assert updated.area_id == area.id
+    assert api[1].await_count == calls + 1
+    assert entity_ids(hass) == ids
+    assert {
+        e.id for e in er.async_get(hass).entities.values() if e.platform == "minij"
+    } == old_entity_ids
+    assert er.async_get(hass).async_get(ids["current_status_alias"]).name == "My status"
+    assert len(registry.devices) == 1
+    # Reload must not restore the old setup snapshot or lose overrides.
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert registry.async_get(device.id).sw_version == "test-wifi-2 test-firmware-2"
+    assert registry.async_get(device.id).name_by_user == "My washer"
+    assert registry.async_get(device.id).area_id == area.id
+    assert entity_ids(hass) == ids

@@ -53,3 +53,16 @@
 依据：[HACS 仓库布局与发布](https://www.hacs.xyz/docs/publish/integration/)、
 [版本规则](https://www.hacs.xyz/docs/publish/start/)、
 [下载和更新操作](https://www.hacs.xyz/docs/use/repositories/dashboard/)。
+
+## 已安装测试版，却提示更新为提交号
+
+如果安装版本是 `v0.1.1b1` 等标签，而最新版本显示为短提交号，
+先确认 HACS 的预发布开关已打开：单次下载时选中测试版，不一定等于更新实体持续追踪测试版。
+
+打开 **设置 → 设备与服务 → 实体**，搜索 MiniJ，并在筛选中包含已禁用实体。
+找到 HACS 提供的 **Pre-release／预发布**开关，先从实体设置启用该实体，再打开开关。
+随后更新 HACS 仓库信息。这个开关不在 MiniJ 自身的配置或更新弹窗中。
+
+例如 `489c35d` 与 `v0.1.1b1` 是同一发布提交，不需要仅因显示形式不同重复安装。
+[HACS 官方开关说明](https://www.hacs.xyz/docs/use/entities/switch/)说明该实体默认禁用，
+其开关状态决定更新实体是否考虑预发布版本。
