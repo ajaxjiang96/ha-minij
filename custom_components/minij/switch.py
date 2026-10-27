@@ -1,6 +1,7 @@
 """Experimental device controls, disabled until explicitly enabled by the owner."""
 
 import asyncio
+from asyncio import sleep
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
@@ -89,6 +90,10 @@ class MinijControlSwitch(MinijEntity, SwitchEntity):
     async def _async_send(self, enabled: bool) -> None:
         raise NotImplementedError
 
+    async def _async_confirm(self, enabled: bool) -> None:
+        if self._control_active:
+            await self._async_refresh_control()
+
     def _validate_control(self) -> None:
         raise NotImplementedError
 
@@ -117,8 +122,7 @@ class MinijControlSwitch(MinijEntity, SwitchEntity):
                 raise HomeAssistantError(
                     translation_domain=DOMAIN, translation_key="control_send_uncertain"
                 ) from err
-            if self._control_active:
-                await self._async_refresh_control()
+            await self._async_confirm(enabled)
             if (
                 not self._control_active
                 or not self.available
@@ -214,3 +218,14 @@ class MinijPromptToneSwitch(MinijControlSwitch):
 
     async def _async_send(self, enabled: bool) -> None:
         await self.coordinator.client.async_set_prompt_tone(self.device_id, enabled)
+
+    async def _async_confirm(self, enabled: bool) -> None:
+        """Allow delayed settings reports: at most three reads, never another write."""
+        for attempt in range(3):
+            if attempt:
+                await sleep(2)
+            if not self._control_active:
+                return
+            await self._async_refresh_control()
+            if not self.available or self.is_on is enabled or self.is_on is None:
+                return
