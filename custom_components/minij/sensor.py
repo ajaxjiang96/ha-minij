@@ -15,7 +15,7 @@ from . import MinijConfigEntry
 from .coordinator import MinijCoordinator
 from .entity import MinijEntity
 
-KNOWN_STATUSES = ("resting", "waiting", "working", "device_exception")
+KNOWN_STATUSES = ("resting", "waiting", "working", "paused", "device_exception")
 
 SENSORS = (
     SensorEntityDescription(

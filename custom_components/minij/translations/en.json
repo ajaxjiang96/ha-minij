@@ -80,7 +80,8 @@
           "resting": "Standby",
           "working": "Working",
           "device_exception": "Device-reported exception",
-          "waiting": "Awake, ready to select a program"
+          "waiting": "Awake, ready to select a program",
+          "paused": "Paused"
         }
       },
       "reported_program": {
@@ -137,21 +138,46 @@
       },
       "prompt_tone": {
         "name": "Prompt tone (experimental)"
+      },
+      "cleaning_trusteeship": {
+        "name": "Automatic drum cleaning"
+      },
+      "cleaning_reminder": {
+        "name": "Drum cleaning reminder"
+      }
+    },
+    "select": {
+      "program": {
+        "name": "Pending program"
+      },
+      "cleaning_threshold": {
+        "name": "Drum cleaning reminder interval"
+      }
+    },
+    "button": {
+      "start_program": {
+        "name": "Start pending program (experimental)"
+      },
+      "wake": {
+        "name": "Wake (experimental)"
+      },
+      "start_cleaning": {
+        "name": "Start drum cleaning"
+      },
+      "pause": {
+        "name": "Pause (experimental)"
+      },
+      "resume": {
+        "name": "Resume (experimental)"
+      },
+      "power_off": {
+        "name": "Stop / power off (experimental)"
       }
     }
   },
   "exceptions": {
     "control_read_failed": {
       "message": "Unable to read current device state; no command was sent."
-    },
-    "control_unsupported": {
-      "message": "Control has not been verified for this model, firmware, or bucket configuration."
-    },
-    "control_not_authorized": {
-      "message": "The device has not reported cloud-control authorization; confirm authorization on the appliance first."
-    },
-    "control_not_idle": {
-      "message": "This preview only permits child-lock verification while the device explicitly reports idle."
     },
     "control_unknown_lock": {
       "message": "The current child-lock state is unknown; no command was sent."
@@ -168,11 +194,20 @@
     "control_not_confirmed": {
       "message": "The cloud accepted the command, but the latest read has not confirmed the target state. Check the appliance and App; no retry was sent."
     },
-    "prompt_tone_not_waiting": {
-      "message": "This prompt-tone preview only permits a command while the device explicitly reports waiting (awake, not running)."
-    },
     "prompt_tone_not_supported": {
       "message": "This device settings response does not explicitly provide a valid prompt-tone switch; no command was sent."
+    },
+    "program_option_unavailable": {
+      "message": "This option is no longer in the latest device metadata."
+    },
+    "program_changed": {
+      "message": "The selected program changed; choose a parameter from the current program."
+    },
+    "cleaning_setting_unavailable": {
+      "message": "This device does not provide the current cleaning setting; no command was sent."
+    },
+    "control_no_running_program": {
+      "message": "No current running program was found; no command was sent. Check the MiniJ App before trying again."
     }
   }
 }

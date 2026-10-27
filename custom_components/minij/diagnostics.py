@@ -45,6 +45,17 @@ async def async_get_config_entry_diagnostics(
             flag = device.get("newOrOldAppOnlineStatus")
             if type(flag) is int:
                 summary["reported_online_status"] = flag
+            summary["settings"] = coordinator.setting_reports.get(
+                device.get("deviceId"), {}
+            )
+            panels = getattr(coordinator, "program_controls", {})
+            if panel := panels.get(device.get("deviceId")):
+                summary["program_controls"] = panel.diagnostics_snapshot()
+            cleaning = getattr(coordinator, "cleaning_controls", {}).get(
+                device.get("deviceId")
+            )
+            if cleaning:
+                summary["cleaning"] = cleaning.diagnostics_snapshot()
             devices.append(summary)
     return {
         "captured_at": dt_util.utcnow().isoformat(),
@@ -59,4 +70,15 @@ async def async_get_config_entry_diagnostics(
             else None
         ),
         "cached_devices": devices,
+        "recent_commands": list(coordinator.client.command_history)
+        if coordinator is not None
+        else [],
+        "command_history_scope": (
+            "Last 30 commands since this integration load; "
+            "accepted is not execution confirmation"
+        ),
+        "local_control_gates": (
+            "No model, firmware, authorization flag or operating-state gate; "
+            "server authentication and fresh input validation remain"
+        ),
     }
