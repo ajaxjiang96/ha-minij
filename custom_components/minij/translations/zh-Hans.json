@@ -77,9 +77,10 @@
       "status": {
         "name": "状态",
         "state": {
-          "resting": "空闲",
+          "resting": "待机",
           "working": "运行中",
-          "device_exception": "设备上报异常"
+          "device_exception": "设备上报异常",
+          "waiting": "已唤醒，待选择程序"
         }
       },
       "reported_program": {
@@ -133,15 +134,18 @@
     "switch": {
       "child_lock_control": {
         "name": "童锁控制（实验）"
+      },
+      "prompt_tone": {
+        "name": "提示音（实验）"
       }
     }
   },
   "exceptions": {
     "control_read_failed": {
-      "message": "无法确认最新设备状态，未发送童锁指令。"
+      "message": "无法读取当前设备状态，未发送控制指令。"
     },
     "control_unsupported": {
-      "message": "此型号、固件或桶配置尚未验证童锁控制。"
+      "message": "尚未验证此型号、固件或桶配置的控制能力。"
     },
     "control_not_authorized": {
       "message": "设备未上报云端控制授权，请先在机器上确认授权。"
@@ -159,10 +163,16 @@
       "message": "小吉限制了请求频率，未自动重发指令。请等待后再检查 App。"
     },
     "control_send_uncertain": {
-      "message": "无法确认童锁请求结果，指令可能已被接收。请查看机器和 App，勿反复点击。"
+      "message": "控制请求结果不确定，可能已被接受。请先查看机器及 App，不要反复点击。"
     },
     "control_not_confirmed": {
-      "message": "童锁请求已被云端接收，但最新读取尚未确认目标状态。请查看机器和 App，未自动重发。"
+      "message": "云端已接受请求，但最新回读未确认目标状态。请检查机器及 App；未自动重发。"
+    },
+    "prompt_tone_not_waiting": {
+      "message": "此提示音候选仅允许设备明确上报 waiting（已唤醒、未运行）时操作。"
+    },
+    "prompt_tone_not_supported": {
+      "message": "本机设置表未明确提供有效的提示音开关，未发送指令。"
     }
   }
 }

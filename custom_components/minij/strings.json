@@ -77,9 +77,10 @@
       "status": {
         "name": "Status",
         "state": {
-          "resting": "Idle",
+          "resting": "Standby",
           "working": "Working",
-          "device_exception": "Device-reported exception"
+          "device_exception": "Device-reported exception",
+          "waiting": "Awake, ready to select a program"
         }
       },
       "reported_program": {
@@ -133,15 +134,18 @@
     "switch": {
       "child_lock_control": {
         "name": "Child lock control (experimental)"
+      },
+      "prompt_tone": {
+        "name": "Prompt tone (experimental)"
       }
     }
   },
   "exceptions": {
     "control_read_failed": {
-      "message": "Unable to read current device state; no child-lock command was sent."
+      "message": "Unable to read current device state; no command was sent."
     },
     "control_unsupported": {
-      "message": "Child-lock control has not been verified for this model, firmware, or bucket configuration."
+      "message": "Control has not been verified for this model, firmware, or bucket configuration."
     },
     "control_not_authorized": {
       "message": "The device has not reported cloud-control authorization; confirm authorization on the appliance first."
@@ -159,10 +163,16 @@
       "message": "MiniJ rate-limited the request; the command was not retried. Wait and check the App."
     },
     "control_send_uncertain": {
-      "message": "The child-lock request result is uncertain; it may have been accepted. Check the appliance and App before trying again."
+      "message": "The command result is uncertain; it may have been accepted. Check the appliance and App before trying again."
     },
     "control_not_confirmed": {
-      "message": "The cloud accepted the child-lock request, but the latest read has not confirmed the target state. Check the appliance and App; no retry was sent."
+      "message": "The cloud accepted the command, but the latest read has not confirmed the target state. Check the appliance and App; no retry was sent."
+    },
+    "prompt_tone_not_waiting": {
+      "message": "This prompt-tone preview only permits a command while the device explicitly reports waiting (awake, not running)."
+    },
+    "prompt_tone_not_supported": {
+      "message": "This device settings response does not explicitly provide a valid prompt-tone switch; no command was sent."
     }
   }
 }
