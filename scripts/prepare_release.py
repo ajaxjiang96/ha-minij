@@ -26,7 +26,7 @@ def release_settings(root: Path, tag: str) -> dict[str, str]:
         "RELEASE_VERSION": version,
         "RELEASE_PRERELEASE": "true" if beta else "false",
         "RELEASE_LATEST": "false" if beta else "true",
-        "RELEASE_KIND": "监测测试版" if beta else "监测版",
+        "RELEASE_KIND": "测试版" if beta else "集成",
     }
 
 
