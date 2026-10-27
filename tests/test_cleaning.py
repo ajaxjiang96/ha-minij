@@ -289,3 +289,23 @@ async def test_cleaning_unload_during_preflight_never_sends(controls):
         await entity.async_press()
     assert caught.value.translation_key == "control_read_failed"
     controls.parent.client.async_start_cleaning.assert_not_awaited()
+
+
+async def test_cleaning_unloaded_during_confirmation_does_not_confirm(controls):
+    entity = entity_for(controls, "threshold")
+    client = controls.parent.client
+
+    async def command(device_id, value):
+        async def unloaded(device_id):
+            entity._active = False
+            data = deepcopy(client.async_get_cleaning.return_value)
+            data["bucketCleanRemindBeforeTimes"] = value
+            return data
+
+        client.async_get_cleaning.side_effect = unloaded
+
+    client.async_set_cleaning_threshold.side_effect = command
+    with pytest.raises(HomeAssistantError) as err:
+        await entity.async_select_option("20次")
+    assert err.value.translation_key == "control_not_confirmed"
+    client.async_set_cleaning_threshold.assert_awaited_once()

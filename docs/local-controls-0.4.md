@@ -1,4 +1,4 @@
-# 0.4.0b2 本地控制验收版
+# 0.4.0b3 本地控制验收版
 
 本版按所有者要求直接本地安装，不创建 GitHub Release 或发布标签。
 不再按 `resting/waiting/working`、型号、固件或“云端授权”上报字段提前拒绝控制。
@@ -8,12 +8,15 @@
 
 | 控制 | 请求与取值依据 | 当前验证范围 |
 | --- | --- | --- |
-| 童锁 | 原生 childLock 布尔路径 | 已发送但未确认效果，面板存在；所有者下次洗涤核对 |
+| 童锁 | 原生 childLock 布尔路径 | 本次诊断含 working 状态开/关后的云端上报变化；面板效果未单独确认 |
 | 提示音 | App 更多设置的 promptTone | waiting 已有实际静音/解除与恢复记录；其他状态待测 |
-| 程序选择 | 本机程序列表 + deviceModeSetup | 本机只读发现 22 个程序；选择后的真实行为待测 |
-| 洗涤水位、温度、漂洗次数、烘干、烘干强度、蒸汽除菌、UVC 筒灯 | 当前程序的 optionalValueList + workingUserStatsSetup | 全部 22 程序只读发现参数并集 7 项；逐项写入效果待测 |
+| 待启动程序 | 本机程序列表 + 目标程序参数读取 | 本地选择草稿，不发送设备命令；不同程序参数已只读核对 |
+| 洗涤水位、温度、漂洗次数、烘干、烘干强度、蒸汽除菌、UVC 筒灯 | 当前程序的 optionalValueList + workingUserStatsSetup | 全部 22 程序只读发现参数并集 7 项；所有者反馈多项有效，未逐项确认 |
 | 清洁提醒、托管（设备提供时）、提醒次数 | 智能清洁网页及本机元数据 | 本机提供提醒及 5–50 次的选项，托管字段为 null，App 隐藏 |
 | 立即筒清洁 | 网页 immediateExecBucketClean 原样参数 | 仅单次请求并记录云端接受；不将 ACK 说成机器已运行 |
+
+“待启动程序”仅保存在本次加载期间，重启后重新使用云端目录初值。它不代表机器已切换或启动，实际程序仍看“设备上报程序”传感器。
+切换时先读取目标参数，成功后整组替换；读取失败保留旧选择和参数。后台刷新保留草稿，Diagnostics 单独标明 `selection_source` 和 `cloud_catalog_current`。
 
 参数项随所选程序变化；不支持的参数显示不可用、选项清空。温度等是协议枚举：
 例如“40℃”对应值 3，不能把数字 40 直接当协议值。输入必须在设备最新提供的选项里。
@@ -21,7 +24,8 @@
 
 普通洗涤的启动/暂停/继续/取消/电源动作仍缺准确 operateType 取值，
 本版不把猜测字符串包装成可用按钮。立即筒清洁是独立且已确认载荷的网页路径，
-不能当作通用洗涤启动。程序选择端点与启动路径分开，但程序选择后的实际机器行为仍待所有者核对。
+不能当作通用洗涤启动。旧版 `deviceModeSetup` 虽被云端接受，目录当前项却未随之变化；
+它不能证明交互式程序切换，已删除该写入路径，改为明确的待启动草稿。
 
 ## 本地安装与回退
 
@@ -47,8 +51,8 @@
 ## 协议证据
 
 - 程序读取：GET device/v2/getDeviceModeList（deviceId、空 bucketCode）。
-- 参数读取：GET device/v2/getUserDeviceMode（deviceId、currentDeviceMode.id）。
-- 程序写入：POST device/deviceModeSetup，deviceId/userDeviceModeId 为字符串，bid/vid/programNum 为整数。
+- 参数读取：GET device/v2/getUserDeviceMode（deviceId、所选程序 ID）；不能固定读目录旧 currentDeviceMode.id。
+- 选择草稿：只读目标程序参数并更新本地完整快照，无程序写入请求。
 - 单参数写入：POST device/v2/workingUserStatsSetup，deviceId/basicFunction/value/userDeviceModeStatsId 均为字符串。
 - 批量 deviceStatsSetup 内部 map 键尚未确定，没有用猜测 map 取代单参数路径；是否在非运行状态接受由实际服务端结果核对。
 - 智能清洁：GET device/getIntelligentBucketClean；POST device/switchBasicFunction、device/remindAfterCleanTimes、device/immediateExecBucketClean。

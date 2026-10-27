@@ -157,7 +157,7 @@ class MinijProgramControl(MinijEntity, SelectEntity):
             if not self._active:
                 break
             await self.controls.async_refresh()
-            if not self.available:
+            if not self._active or not self.available:
                 break
             if predicate():
                 return
@@ -198,14 +198,7 @@ class MinijProgramSelect(MinijProgramControl):
                     translation_domain=DOMAIN,
                     translation_key="program_option_unavailable",
                 )
-            if self.controls.data.current_id == target.id:
-                return
-            await self._send(
-                self.coordinator.client.async_select_program,
-                self.device_id,
-                target.payload(),
-            )
-            await self._confirm(lambda: self.controls.data.current_id == target.id)
+            await self._send(self.controls.async_select_draft, target.id)
 
 
 class MinijParameterSelect(MinijProgramControl):
@@ -260,8 +253,8 @@ class MinijParameterSelect(MinijProgramControl):
         )
 
     async def async_select_option(self, option: str) -> None:
+        origin = self.controls.data.current_id if self.controls.data else None
         async with self.controls.command_lock:
-            origin = self.controls.data.current_id if self.controls.data else None
             await self._fresh()
             if self.controls.data.current_id != origin:
                 raise ServiceValidationError(

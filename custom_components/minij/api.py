@@ -305,31 +305,6 @@ class MinijClient:
             + urlencode({"deviceId": device_id, "userDeviceModeId": program_id})
         )
 
-    async def async_select_program(
-        self, device_id: str, program: dict[str, Any]
-    ) -> None:
-        if (
-            not isinstance(device_id, str)
-            or not device_id
-            or not isinstance(program.get("id"), str)
-            or not program["id"]
-            or any(
-                type(program.get(key)) is not int or not 0 <= program[key] <= 255
-                for key in ("bid", "vid", "programNum")
-            )
-        ):
-            raise MinijError("Invalid program selection")
-        await self._command(
-            "device/deviceModeSetup",
-            {
-                "deviceId": device_id,
-                "bid": program["bid"],
-                "vid": program["vid"],
-                "programNum": program["programNum"],
-                "userDeviceModeId": program["id"],
-            },
-        )
-
     async def async_set_running_parameter(
         self, device_id: str, parameter_id: str, code: str, value: int
     ) -> None:
@@ -405,14 +380,13 @@ class MinijClient:
             "function": body.get(
                 "basicFunction",
                 {
-                    "device/deviceModeSetup": "program",
                     "device/remindAfterCleanTimes": "cleaning_threshold",
                     "device/immediateExecBucketClean": "cleaning_start",
                 }.get(route, "control"),
             ),
             "target": body.get(
                 "onOff",
-                body.get("value", body.get("programNum", body.get("cleanTimes"))),
+                body.get("value", body.get("cleanTimes")),
             ),
             "before": dict(self._device_reports.get(device_id, {})),
             "result": "pending",

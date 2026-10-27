@@ -458,24 +458,13 @@ async def test_prompt_tone_rejects_invalid_action_before_request(service, value)
     assert not state["requests"]
 
 
-async def test_program_and_parameter_requests_use_protocol_types_and_record_no_ids(
+async def test_parameter_requests_use_protocol_types_and_record_no_ids(
     service,
 ):
     import json
 
     client, state = service
     state["body"]["data"] = None
-    await client.async_select_program(
-        "private-device", {"id": "private-mode", "bid": 1, "vid": 15, "programNum": 2}
-    )
-    assert state["request_body"] == {
-        "deviceId": "private-device",
-        "bid": 1,
-        "vid": 15,
-        "programNum": 2,
-        "userDeviceModeId": "private-mode",
-    }
-    assert state["requests"][-1].path == "/api/device/deviceModeSetup"
     await client.async_set_running_parameter(
         "private-device", "private-stat", "washWaterTemperature", 3
     )
@@ -490,7 +479,7 @@ async def test_program_and_parameter_requests_use_protocol_types_and_record_no_i
     for private in ("private-device", "private-mode", "private-stat", "test-token"):
         assert private not in history
     assert all(command["result"] == "accepted" for command in client.command_history)
-    assert len(state["requests"]) == 2
+    assert len(state["requests"]) == 1
 
 
 async def test_command_diagnostics_records_error_without_raw_response(service):
@@ -539,21 +528,6 @@ async def test_program_reads_escape_device_and_mode_queries(service):
         "deviceId": "device&x=1",
         "userDeviceModeId": "mode&x=2",
     }
-
-
-@pytest.mark.parametrize(
-    "program",
-    [
-        {"id": "x", "bid": True, "vid": 1, "programNum": 1},
-        {"id": "x", "bid": 256, "vid": 1, "programNum": 1},
-        {"id": "", "bid": 1, "vid": 1, "programNum": 1},
-    ],
-)
-async def test_invalid_program_payload_never_sends(service, program):
-    client, state = service
-    with pytest.raises(api.MinijError):
-        await client.async_select_program("device", program)
-    assert not state["requests"]
 
 
 @pytest.mark.parametrize("kind", ["reminder", "threshold", "clean_now"])

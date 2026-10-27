@@ -1,5 +1,6 @@
 """Synthetic device-provided program choices and command context regressions."""
 
+import asyncio
 from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -64,7 +65,6 @@ async def controls(hass):  # noqa: F811
     client = SimpleNamespace(
         async_get_programs=AsyncMock(return_value=programs()),
         async_get_program_parameters=AsyncMock(return_value=parameters()),
-        async_select_program=AsyncMock(),
         async_set_running_parameter=AsyncMock(),
     )
     parent = SimpleNamespace(
@@ -108,9 +108,7 @@ def test_program_parser_retains_only_select_contract():
     parsed, current = parse_programs(raw)
     assert current == PROGRAM_A["id"]
     assert [p.name for p in parsed] == ["标准", "单脱水"]
-    assert parsed[0].payload() == {
-        key: PROGRAM_A[key] for key in ("id", "bid", "vid", "programNum")
-    }
+    assert (parsed[0].bid, parsed[0].vid, parsed[0].program_num) == (1, 15, 8)
     assert "private-canary" not in repr(parsed)
 
 
@@ -176,23 +174,21 @@ async def test_program_command_and_parameter_ranges_follow_refreshed_program(con
     assert entity.options == ["标准", "单脱水"]
     assert parameter.current_option == "不加热"
 
-    async def select(device_id, program):
-        assert device_id == "synthetic-washer"
-        assert program == {
-            key: PROGRAM_B[key] for key in ("id", "bid", "vid", "programNum")
-        }
-        controls.parent.client.async_get_programs.return_value = programs(PROGRAM_B)
-        controls.parent.client.async_get_program_parameters.return_value = parameters(
-            []
-        )
-
-    controls.parent.client.async_select_program.side_effect = select
+    controls.parent.client.async_get_program_parameters.return_value = parameters([])
     await entity.async_select_option("单脱水")
     assert entity.current_option == "单脱水"
     assert parameter.options == []
     assert parameter.current_option is None
     assert not parameter.available
-    controls.parent.client.async_select_program.assert_awaited_once()
+    controls.parent.client.async_set_running_parameter.assert_not_awaited()
+    controls.parent.client.async_get_program_parameters.assert_awaited_with(
+        "synthetic-washer", PROGRAM_B["id"]
+    )
+    await controls.async_refresh()
+    assert entity.current_option == "单脱水"
+    snapshot = controls.diagnostics_snapshot()
+    assert snapshot["selection_source"] == "local_draft"
+    assert snapshot["cloud_catalog_current"] == "标准"
 
 
 async def test_parameter_uses_current_metadata_value_and_id_without_operating_gates(
@@ -292,3 +288,108 @@ def test_numeric_parameter_identifier_is_normalized_for_native_string_payload():
     raw["id"] = 42
     parsed = parse_parameters(parameters([raw]))
     assert parsed[0].id == "42"
+
+
+async def test_failed_draft_parameter_read_preserves_complete_snapshot(controls):
+    original = controls.data
+    controls.parent.client.async_get_program_parameters.side_effect = MinijError(
+        "failed"
+    )
+    with pytest.raises(MinijError):
+        await controls.async_select_draft(PROGRAM_B["id"])
+    assert controls.data is original
+    assert controls.data.selection_source == "cloud_catalog"
+    controls.parent.client.async_set_running_parameter.assert_not_awaited()
+
+
+@pytest.mark.parametrize("fail_stale_read", [False, True])
+async def test_background_read_cannot_replace_new_draft(controls, fail_stale_read):
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def read(device_id, program_id):
+        if program_id == PROGRAM_A["id"]:
+            entered.set()
+            await release.wait()
+            if fail_stale_read:
+                raise MinijError("stale failure")
+            return parameters()
+        return parameters([])
+
+    controls.parent.client.async_get_program_parameters.side_effect = read
+    background = asyncio.create_task(controls.async_refresh())
+    await entered.wait()
+    await controls.async_select_draft(PROGRAM_B["id"])
+    release.set()
+    await background
+    assert controls.data.current_id == PROGRAM_B["id"]
+    assert controls.data.parameters == ()
+    assert controls.data.selection_source == "local_draft"
+    assert controls.last_update_success
+
+
+async def test_draft_parameter_write_keeps_selected_program_despite_catalog_current(
+    controls,
+):
+    await controls.async_select_draft(PROGRAM_B["id"])
+    entity = entity_for(controls, True)
+
+    async def write(*args):
+        controls.parent.client.async_get_program_parameters.return_value[
+            "userDeviceModeStatsList"
+        ][0]["value"] = 2
+
+    controls.parent.client.async_set_running_parameter.side_effect = write
+    await entity.async_select_option("30℃")
+    assert controls.data.current_id == PROGRAM_B["id"]
+    assert entity.current_option == "30℃"
+    assert all(
+        call.args[1] == PROGRAM_B["id"]
+        for call in controls.parent.client.async_get_program_parameters.await_args_list[
+            1:
+        ]
+    )
+
+
+async def test_removed_draft_falls_back_to_catalog_with_matching_parameters(controls):
+    await controls.async_select_draft(PROGRAM_B["id"])
+    catalog = programs()
+    catalog["otherDeviceModeVOList"] = []
+    controls.parent.client.async_get_programs.return_value = catalog
+    await controls.async_refresh()
+    assert controls.data.current_id == PROGRAM_A["id"]
+    assert controls.data.selection_source == "cloud_catalog"
+    controls.parent.client.async_get_program_parameters.assert_awaited_with(
+        "synthetic-washer", PROGRAM_A["id"]
+    )
+
+
+async def test_parameter_queued_behind_program_switch_keeps_origin(controls):
+    entity = entity_for(controls, True)
+    async with controls.command_lock:
+        queued = asyncio.create_task(entity.async_select_option("30℃"))
+        await asyncio.sleep(0)
+        await controls.async_select_draft(PROGRAM_B["id"])
+    with pytest.raises(HomeAssistantError) as err:
+        await queued
+    assert err.value.translation_key == "program_changed"
+    controls.parent.client.async_set_running_parameter.assert_not_awaited()
+
+
+async def test_parameter_unloaded_during_confirmation_does_not_confirm(controls):
+    entity = entity_for(controls, True)
+    client = controls.parent.client
+
+    async def command(*args):
+        async def unloaded(*args):
+            entity._active = False
+            changed = deepcopy(PARAMETER)
+            changed["value"] = 2
+            return parameters([changed])
+
+        client.async_get_program_parameters.side_effect = unloaded
+
+    client.async_set_running_parameter.side_effect = command
+    with pytest.raises(HomeAssistantError) as err:
+        await entity.async_select_option("30℃")
+    assert err.value.translation_key == "control_not_confirmed"
+    client.async_set_running_parameter.assert_awaited_once()

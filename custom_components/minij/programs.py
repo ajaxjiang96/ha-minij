@@ -23,14 +23,6 @@ class Program:
     vid: int
     program_num: int
 
-    def payload(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "bid": self.bid,
-            "vid": self.vid,
-            "programNum": self.program_num,
-        }
-
 
 @dataclass(frozen=True)
 class Parameter:
@@ -46,6 +38,8 @@ class ProgramState:
     programs: tuple[Program, ...]
     current_id: str | None
     parameters: tuple[Parameter, ...]
+    cloud_catalog_current_id: str | None = None
+    selection_source: str = "cloud_catalog"
 
     @property
     def current(self) -> Program | None:
@@ -152,6 +146,7 @@ class MinijProgramCoordinator(DataUpdateCoordinator[ProgramState]):
         self.device_id = device_id
         self.command_lock = asyncio.Lock()
         self._retry_delay = 60
+        self._selection_revision = 0
 
     def _bound(self) -> bool:
         return self.parent.last_update_success and self.device_id in self.parent.data
@@ -159,9 +154,21 @@ class MinijProgramCoordinator(DataUpdateCoordinator[ProgramState]):
     async def _async_update_data(self) -> ProgramState:
         if not self._bound():
             raise UpdateFailed("MiniJ device status unavailable", retry_after=60)
+        revision = self._selection_revision
         try:
-            programs, current_id = parse_programs(
+            programs, cloud_current_id = parse_programs(
                 await self.parent.client.async_get_programs(self.device_id)
+            )
+            local = self.data and self.data.selection_source == "local_draft"
+            current_id = (
+                self.data.current_id
+                if local and any(p.id == self.data.current_id for p in programs)
+                else cloud_current_id
+            )
+            source = (
+                "local_draft"
+                if local and current_id == self.data.current_id
+                else "cloud_catalog"
             )
             parameters = (
                 parse_parameters(
@@ -175,6 +182,8 @@ class MinijProgramCoordinator(DataUpdateCoordinator[ProgramState]):
         except MinijAuthError as err:
             raise ConfigEntryAuthFailed("MiniJ rejected the session token") from err
         except MinijError as err:
+            if revision != self._selection_revision and self.data is not None:
+                return self.data
             delay = self._retry_delay
             self._retry_delay = min(delay * 2, 900)
             if isinstance(err, MinijRateLimitError):
@@ -187,7 +196,33 @@ class MinijProgramCoordinator(DataUpdateCoordinator[ProgramState]):
                 "MiniJ device changed during program read", retry_after=60
             )
         self._retry_delay = 60
-        return ProgramState(programs, current_id, parameters)
+        if revision != self._selection_revision and self.data is not None:
+            return self.data
+        return ProgramState(programs, current_id, parameters, cloud_current_id, source)
+
+    async def async_select_draft(self, program_id: str) -> None:
+        """Load a local pending selection; this does not send an appliance command."""
+        parameters = parse_parameters(
+            await self.parent.client.async_get_program_parameters(
+                self.device_id, program_id
+            )
+        )
+        if (
+            not self._bound()
+            or not self.data
+            or not any(p.id == program_id for p in self.data.programs)
+        ):
+            raise MinijError("MiniJ program changed during selection")
+        self._selection_revision += 1
+        self.async_set_updated_data(
+            ProgramState(
+                self.data.programs,
+                program_id,
+                parameters,
+                self.data.cloud_catalog_current_id,
+                "local_draft",
+            )
+        )
 
     def diagnostics_snapshot(self) -> dict[str, Any]:
         """Export cache only, excluding account/device/program/parameter IDs."""
@@ -201,6 +236,17 @@ class MinijProgramCoordinator(DataUpdateCoordinator[ProgramState]):
             if data
             else [],
             "current_program": data.current.name if data and data.current else None,
+            "selection_source": data.selection_source if data else None,
+            "cloud_catalog_current": next(
+                (
+                    p.name
+                    for p in data.programs
+                    if p.id == data.cloud_catalog_current_id
+                ),
+                None,
+            )
+            if data
+            else None,
             "parameters": [
                 {
                     "name": x.name,

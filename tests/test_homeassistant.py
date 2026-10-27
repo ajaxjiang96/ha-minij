@@ -145,10 +145,6 @@ def api():
                 return_value={"userDeviceModeStatsList": []},
             ),
             patch(
-                "custom_components.minij.api.MinijClient.async_select_program",
-                new_callable=AsyncMock,
-            ),
-            patch(
                 "custom_components.minij.api.MinijClient.async_set_running_parameter",
                 new_callable=AsyncMock,
             ),
@@ -1776,14 +1772,10 @@ async def test_real_ha_program_and_parameter_selects_follow_current_metadata(has
     )
     assert hass.states.get(parameter_id).state == "40℃"
 
-    async def set_program(device_id, program):
-        assert program["id"] == "mode-b" and program["programNum"] == 1
-        programs["currentDeviceMode"] = programs["frequentlyDeviceModeVOList"][1]
-        MinijClient.async_get_program_parameters.return_value = {
-            "userDeviceModeStatsList": []
-        }
+    async def read_program(device_id, program_id):
+        return details if program_id == "mode-a" else {"userDeviceModeStatsList": []}
 
-    MinijClient.async_select_program.side_effect = set_program
+    MinijClient.async_get_program_parameters.side_effect = read_program
     await hass.services.async_call(
         "select",
         "select_option",
@@ -1792,6 +1784,10 @@ async def test_real_ha_program_and_parameter_selects_follow_current_metadata(has
     )
     await hass.async_block_till_done()
     assert hass.states.get(program_id).state == "快洗"
+    assert programs["currentDeviceMode"]["id"] == "mode-a"
+    MinijClient.async_get_program_parameters.assert_awaited_with(
+        DEVICE["deviceId"], "mode-b"
+    )
     assert hass.states.get(parameter_id).state == "unavailable"
     assert hass.states.get(parameter_id).attributes["options"] == []
     assert entity_ids(hass)["parameter_washWaterTemperature"] == parameter_id
@@ -1860,7 +1856,7 @@ async def test_local_control_names_follow_simplified_chinese_locale(hass, api):
         "prompt_tone": "提示音（实验）",
         "cleaning_reminder": "智能清洁通知",
         "cleaning_threshold": "筒清洁提醒运行次数",
-        "program": "程序选择",
+        "program": "待启动程序",
         "start_cleaning": "立即筒清洁",
         "device_notification": "设备通知",
     }.items():

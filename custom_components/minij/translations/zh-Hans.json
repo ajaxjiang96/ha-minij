@@ -147,7 +147,7 @@
     },
     "select": {
       "program": {
-        "name": "程序选择"
+        "name": "待启动程序"
       },
       "cleaning_threshold": {
         "name": "筒清洁提醒运行次数"

@@ -209,7 +209,7 @@ class MinijCleaningControl(MinijEntity):
             if not self._active:
                 break
             await self.controls.async_refresh()
-            if not self.available:
+            if not self._active or not self.available:
                 break
             if predicate():
                 return

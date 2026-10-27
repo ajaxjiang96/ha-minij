@@ -147,7 +147,7 @@
     },
     "select": {
       "program": {
-        "name": "Selected program"
+        "name": "Pending program"
       },
       "cleaning_threshold": {
         "name": "Drum cleaning reminder interval"
