@@ -159,7 +159,6 @@ class MinijChildLockSwitch(MinijControlSwitch):
     """Retain the pending child-lock candidate; real running-state proof is absent."""
 
     _attr_translation_key = "child_lock_control"
-    _attr_name = "Child lock control (experimental)"
     _attr_icon = "mdi:lock-outline"
 
     def __init__(self, coordinator: MinijCoordinator, device_id: str) -> None:
@@ -191,7 +190,6 @@ class MinijPromptToneSwitch(MinijControlSwitch):
     _key = "prompt_tone"
     _setting_code = "promptTone"
     _attr_translation_key = "prompt_tone"
-    _attr_name = "Prompt tone (experimental)"
     _attr_icon = "mdi:volume-high"
 
     def __init__(self, coordinator: MinijCoordinator, device_id: str) -> None:
@@ -251,11 +249,6 @@ class MinijCleaningSwitch(MinijCleaningControl, SwitchEntity):
         super().__init__(parent, device_id, controls, key)
         self.key = key
         self._attr_translation_key = key
-        self._attr_name = (
-            "Automatic drum cleaning"
-            if key == "cleaning_trusteeship"
-            else "Drum cleaning reminder"
-        )
 
     @property
     def is_on(self) -> bool | None:

@@ -167,7 +167,6 @@ class MinijProgramControl(MinijEntity, SelectEntity):
 
 
 class MinijProgramSelect(MinijProgramControl):
-    _attr_name = "Program"
     _attr_translation_key = "program"
     _attr_icon = "mdi:washing-machine"
 
@@ -298,7 +297,6 @@ class MinijParameterSelect(MinijProgramControl):
 class MinijCleaningThresholdSelect(MinijCleaningControl, SelectEntity):
     """Map server-provided display labels back to exact running-count values."""
 
-    _attr_name = "Drum cleaning reminder interval"
     _attr_translation_key = "cleaning_threshold"
     _attr_icon = "mdi:counter"
 

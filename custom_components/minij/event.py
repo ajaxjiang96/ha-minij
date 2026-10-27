@@ -40,7 +40,6 @@ class MinijNotificationEvent(MinijEntity, EventEntity):
     """Never infer completion from status, time zero, or notification text fragments."""
 
     _attr_translation_key = "device_notification"
-    _attr_name = "Device notification"
     _attr_icon = "mdi:bell-check-outline"
     _attr_event_types = list(NOTIFICATION_EVENTS.values())
 

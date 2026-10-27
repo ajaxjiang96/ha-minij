@@ -1848,3 +1848,20 @@ async def test_local_control_diagnostics_keep_cached_choices_and_settings_withou
     ):
         assert private not in json.dumps(result)
     assert MinijClient.async_get_programs.await_count == before
+
+
+async def test_local_control_names_follow_simplified_chinese_locale(hass, api):
+    hass.config.language = "zh-Hans"
+    await configure(hass)
+    ids = entity_ids(hass)
+    registry = er.async_get(hass)
+    for key, label in {
+        "child_lock_control": "童锁控制（实验）",
+        "prompt_tone": "提示音（实验）",
+        "cleaning_reminder": "智能清洁通知",
+        "cleaning_threshold": "筒清洁提醒运行次数",
+        "program": "程序选择",
+        "start_cleaning": "立即筒清洁",
+        "device_notification": "设备通知",
+    }.items():
+        assert registry.async_get(ids[key]).original_name == label

@@ -36,7 +36,6 @@ async def async_setup_entry(
 class MinijStartCleaningButton(MinijCleaningControl, ButtonEntity):
     """Pass through the current mode ID, including null as the App does."""
 
-    _attr_name = "Start drum cleaning"
     _attr_translation_key = "start_cleaning"
     _attr_icon = "mdi:washing-machine-alert"
 
