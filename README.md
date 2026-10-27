@@ -110,7 +110,7 @@ HA 会在外围添加系统信息，分享前请检查。
 - [童锁协议与验收](docs/child-lock-control.md)
 - [日常洗涤观察指南](docs/cycle-validation.md)
 - [完整集成路线图](docs/roadmap.md)：可靠监测、周期自动化、控制与多型号扩展
-- [首个稳定版验收记录](docs/stable-release-checklist.md)
+- [首个稳定监测版0.1.1验收记录](docs/stable-release-checklist.md)
 - [测试结果与证据边界](docs/validation.md)
 - [开源基础状态](docs/foundation.md)
 - [开发与贡献](CONTRIBUTING.md)
