@@ -80,7 +80,8 @@
           "resting": "Standby",
           "working": "Working",
           "device_exception": "Device-reported exception",
-          "waiting": "Awake, ready to select a program"
+          "waiting": "Awake, ready to select a program",
+          "paused": "Paused"
         }
       },
       "reported_program": {
@@ -162,6 +163,15 @@
       },
       "start_cleaning": {
         "name": "Start drum cleaning"
+      },
+      "pause": {
+        "name": "Pause (experimental)"
+      },
+      "resume": {
+        "name": "Resume (experimental)"
+      },
+      "power_off": {
+        "name": "Stop / power off (experimental)"
       }
     }
   },
@@ -195,6 +205,9 @@
     },
     "cleaning_setting_unavailable": {
       "message": "This device does not provide the current cleaning setting; no command was sent."
+    },
+    "control_no_running_program": {
+      "message": "No current running program was found; no command was sent. Check the MiniJ App before trying again."
     }
   }
 }

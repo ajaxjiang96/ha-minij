@@ -1,4 +1,4 @@
-# 0.4.0b4 本地控制验收版
+# 0.4.0b5 本地控制验收版
 
 本版按所有者要求直接本地安装，不创建 GitHub Release 或发布标签。
 不再按 `resting/waiting/working`、型号、固件或“云端授权”上报字段提前拒绝控制。
@@ -12,6 +12,9 @@
 | 提示音 | App 更多设置的 promptTone | waiting 已有实际静音/解除与恢复记录；其他状态待测 |
 | 唤醒（实验） | 原生菜单“开机”的 power_on | 断网生成的准确请求已观察；所有者确认本地 b4 唤醒有效 |
 | 启动待选程序（实验） | 原生程序详情“立即运行”的 activate | 按所选程序 ID 单次发送；所有者确认本地 b4 普通启动有效 |
+| 暂停（实验） | 运行中面板 pause + 实际运行程序 ID | 离线请求已捕获；不使用本地草稿，真实按钮效果待验收 |
+| 继续（实验） | 暂停面板 activate + 实际运行程序 ID | 离线请求已捕获；与启动同动作值但程序来源不同，真实效果待验收 |
+| 停止／关机（实验） | 停止确认与设备菜单均发送 power_off | 两个 App 入口载荷相同，合并一个按钮；真实效果待验收 |
 | 待启动程序 | 本机程序列表 + 目标程序参数读取 | 本地选择草稿，不发送设备命令；不同程序参数已只读核对 |
 | 洗涤水位、温度、漂洗次数、烘干、烘干强度、蒸汽除菌、UVC 筒灯 | 当前程序的 optionalValueList + workingUserStatsSetup | 22 程序只读发现参数并集 7 项；所有者确认本轮所测参数有效 |
 | 清洁提醒、托管（设备提供时）、提醒次数 | 智能清洁网页及本机元数据 | 本机提供提醒及 5–50 次的选项，托管字段为 null，App 隐藏 |
@@ -32,7 +35,12 @@
 本次观察到：联网只读加载完整标准程序详情后，断网点“立即运行”，
 `activateParam.userDeviceModeStatsSimpleList` 仍为 `[]`。本版复现这条“启动已保存程序”的路径，
 不拼接未经观察的参数映射。已有参数控制保留单参数写入；本轮与唤醒、启动一并经所有者确认有效；其他程序、枚举和状态仍按实际测试范围记录。
-暂停、继续、取消和关机尚未取得准确动作值；不会将通知专用 activateCode 或筒清洁接口作为普通启动。
+暂停与继续分别临时读取 `getRunningCurrentDeviceMode` 的 `id`，再发送 `pause` / `activate`，
+包含原生空参数列表；没有运行程序时不发送。它们不使用本地“待启动程序”。
+App 的运行面板停止方块经“即将停止”确认后，与菜单“关机”都发送 `power_off`，
+本版合并为“停止／关机（实验）”，按下会尝试终止当前程序并关机，不是暂停。
+关机不依赖程序目录或参数读取成功。服务端保护仍由服务端决定，客户端不额外按状态拦截。
+上述三个新按钮尚待所有者实机验收；不将通知专用 activateCode 或筒清洁接口作为普通启动。
 
 旧版 `deviceModeSetup` 虽被云端接受，目录当前项却未随之变化；
 它不能证明交互式程序切换，已删除该写入路径，改为明确的待启动草稿。
@@ -65,6 +73,10 @@
 - 选择草稿：只读目标程序参数并更新本地完整快照，无程序写入请求。
 - 唤醒：POST device/v2/deviceOperate，`{deviceId, bucketCode: "", operateType: "power_on"}`。
 - 启动：同一路径，`operateType: "activate"`，另带 `activateParam: {userDeviceModeId, userDeviceModeStatsSimpleList: []}`。
+- 实际运行程序：GET device/v2/getRunningCurrentDeviceMode（deviceId、空 bucketCode）；空闲可返回 null。
+- 暂停：POST device/v2/deviceOperate，`operateType: "pause"`，`activateParam` 的 `userDeviceModeId` 使用运行程序，参数列表为空。
+- 继续：同启动的 `activate` 载荷，但程序 ID 来自运行程序，不能来自草稿。
+- 停止／关机：POST device/v2/deviceOperate，`{deviceId, bucketCode: "", operateType: "power_off"}`，不带 activateParam。
 - 单参数写入：POST device/v2/workingUserStatsSetup，deviceId/basicFunction/value/userDeviceModeStatsId 均为字符串。
 - 批量 deviceStatsSetup 内部 map 键尚未确定，没有用猜测 map 取代单参数路径；是否在非运行状态接受由实际服务端结果核对。
 - 智能清洁：GET device/getIntelligentBucketClean；POST device/switchBasicFunction、device/remindAfterCleanTimes、device/immediateExecBucketClean。

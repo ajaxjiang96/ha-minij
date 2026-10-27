@@ -80,7 +80,8 @@
           "resting": "待机",
           "working": "运行中",
           "device_exception": "设备上报异常",
-          "waiting": "已唤醒，待选择程序"
+          "waiting": "已唤醒，待选择程序",
+          "paused": "已暂停"
         }
       },
       "reported_program": {
@@ -162,6 +163,15 @@
       },
       "start_cleaning": {
         "name": "立即筒清洁"
+      },
+      "pause": {
+        "name": "暂停（实验）"
+      },
+      "resume": {
+        "name": "继续（实验）"
+      },
+      "power_off": {
+        "name": "停止／关机（实验）"
       }
     }
   },
@@ -195,6 +205,9 @@
     },
     "cleaning_setting_unavailable": {
       "message": "本机未提供当前清洁开关，未发送指令。"
+    },
+    "control_no_running_program": {
+      "message": "未读取到当前运行程序，未发送指令。请在小吉 App 确认状态后重试。"
     }
   }
 }

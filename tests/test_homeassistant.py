@@ -153,7 +153,20 @@ def api():
                 new_callable=AsyncMock,
             ),
             patch(
-                "custom_components.minij.api.MinijClient.async_start_program",
+                "custom_components.minij.api.MinijClient.async_activate_program",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "custom_components.minij.api.MinijClient.async_get_running_program",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "custom_components.minij.api.MinijClient.async_pause_program",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "custom_components.minij.api.MinijClient.async_power_off",
                 new_callable=AsyncMock,
             ),
         ):
@@ -198,7 +211,7 @@ async def test_config_flow_entities_and_unload(hass, api):
     assert devices.await_count == 2  # Flow validation and one coordinator refresh.
 
     ids = entity_ids(hass)
-    assert len(ids) == 15
+    assert len(ids) == 18
     expected = {
         "current_status_alias": "resting",
         "current_mode": "标准",
@@ -213,6 +226,9 @@ async def test_config_flow_entities_and_unload(hass, api):
         "cleaning_threshold": "40次",
         "start_cleaning": "unknown",
         "wake": "unknown",
+        "pause": "unknown",
+        "resume": "unknown",
+        "power_off": "unknown",
         "start_program": "unknown",
         "program": "unknown",
     }
@@ -381,7 +397,7 @@ async def test_sms_requires_submission_and_stores_only_token(hass, api, sms_api)
     assert entry.data == {"token": "sms-session-token"}
     assert entry.unique_id == "test-account"
     await hass.async_block_till_done()
-    assert len(entity_ids(hass)) == 15
+    assert len(entity_ids(hass)) == 18
 
 
 @pytest.mark.parametrize(
@@ -621,7 +637,7 @@ async def test_new_device_removal_and_return_does_not_duplicate_entities(hass, a
     await hass.async_block_till_done()
     registry = er.async_get(hass)
     original_ids = {e.id for e in registry.entities.values() if e.platform == "minij"}
-    assert len(original_ids) == 30
+    assert len(original_ids) == 36
     api[1].return_value = [second]
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
@@ -931,7 +947,7 @@ async def test_duration_lifecycle_and_unknown_model(hass, api):
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
     entities = er.async_get(hass).entities.values()
-    assert len([e for e in entities if e.platform == "minij"]) == 28
+    assert len([e for e in entities if e.platform == "minij"]) == 34
     assert not any(
         e.unique_id == "unsupported-model-device_program_remain_time" for e in entities
     )
@@ -1205,7 +1221,7 @@ async def test_child_lock_enabled_by_default_and_verified_round_trip(hass, api):
     assert er.async_get(hass).async_get(control_id).disabled_by is None
     assert hass.states.get(control_id).state == "off"
     command.assert_not_awaited()
-    assert len(all_ids) == 15 and len(original) == 15
+    assert len(all_ids) == 18 and len(original) == 18
     await enable_child_lock_control(hass, entry)
     assert all(entity_ids(hass)[key] == value for key, value in original.items())
     assert hass.states.get(control_id).state == "off"
@@ -1869,6 +1885,9 @@ async def test_local_control_names_follow_simplified_chinese_locale(hass, api):
         "program": "待启动程序",
         "start_cleaning": "立即筒清洁",
         "wake": "唤醒（实验）",
+        "pause": "暂停（实验）",
+        "resume": "继续（实验）",
+        "power_off": "停止／关机（实验）",
         "start_program": "启动待选程序（实验）",
         "device_notification": "设备通知",
     }.items():
@@ -1888,7 +1907,7 @@ async def test_wake_and_start_selected_program_use_shared_controls_without_optim
     entry = await configure(hass)
     ids = entity_ids(hass)
     MinijClient.async_power_on.assert_not_awaited()
-    MinijClient.async_start_program.assert_not_awaited()
+    MinijClient.async_activate_program.assert_not_awaited()
     assert hass.states.get(ids["current_status_alias"]).state == "resting"
 
     await hass.services.async_call(
@@ -1910,7 +1929,7 @@ async def test_wake_and_start_selected_program_use_shared_controls_without_optim
         {"entity_id": ids["start_program"]},
         blocking=True,
     )
-    MinijClient.async_start_program.assert_awaited_once_with(
+    MinijClient.async_activate_program.assert_awaited_once_with(
         DEVICE["deviceId"], "mode-b"
     )
     # The start button and selectors refer to the same coordinator and draft.
@@ -1924,3 +1943,88 @@ async def test_wake_and_start_selected_program_use_shared_controls_without_optim
     assert catalog["currentDeviceMode"]["id"] == "mode-a"
     assert MinijClient.async_power_on.await_count == 1  # No implicit wake on start.
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_cycle_buttons_use_actual_running_program_not_pending_draft(hass, api):
+    from custom_components.minij.api import MinijClient
+
+    MinijClient.async_get_programs.return_value = program_metadata()
+    MinijClient.async_get_program_parameters.side_effect = (
+        lambda device_id, program_id: parameter_metadata(program_id)
+    )
+    MinijClient.async_get_running_program.return_value = "actual-running-program"
+    await configure(hass)
+    ids = entity_ids(hass)
+    MinijClient.async_get_running_program.assert_not_awaited()
+    MinijClient.async_pause_program.assert_not_awaited()
+    MinijClient.async_activate_program.assert_not_awaited()
+    MinijClient.async_power_off.assert_not_awaited()
+    await hass.services.async_call(
+        "select",
+        "select_option",
+        {"entity_id": ids["program"], "option": "快洗"},
+        blocking=True,
+    )
+    for key in ["pause", "resume", "power_off"]:
+        await hass.services.async_call(
+            "button", "press", {"entity_id": ids[key]}, blocking=True
+        )
+    MinijClient.async_pause_program.assert_awaited_once_with(
+        DEVICE["deviceId"], "actual-running-program"
+    )
+    MinijClient.async_activate_program.assert_awaited_once_with(
+        DEVICE["deviceId"], "actual-running-program"
+    )
+    MinijClient.async_power_off.assert_awaited_once_with(DEVICE["deviceId"])
+    assert MinijClient.async_get_running_program.await_count == 2
+    assert hass.states.get(ids["program"]).state == "快洗"
+    assert hass.states.get(ids["current_status_alias"]).state == "resting"
+    MinijClient.async_power_on.assert_not_awaited()
+
+
+async def test_cycle_buttons_without_running_program_do_not_send(hass, api):
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.minij.api import MinijClient
+
+    await configure(hass)
+    ids = entity_ids(hass)
+    for key in ["pause", "resume"]:
+        with pytest.raises(HomeAssistantError) as error:
+            await hass.services.async_call(
+                "button", "press", {"entity_id": ids[key]}, blocking=True
+            )
+        assert error.value.translation_key == "control_no_running_program"
+    MinijClient.async_pause_program.assert_not_awaited()
+    MinijClient.async_activate_program.assert_not_awaited()
+    # Power-off does not depend on a program catalog or a running program ID.
+    await hass.services.async_call(
+        "button", "press", {"entity_id": ids["power_off"]}, blocking=True
+    )
+    MinijClient.async_power_off.assert_awaited_once_with(DEVICE["deviceId"])
+
+
+async def test_observed_paused_status_is_known_and_keeps_remaining_time_unknown(
+    hass, api
+):
+    from custom_components.minij.sensor import KNOWN_STATUSES
+
+    entry = await configure(hass)
+    paused = deepcopy(DEVICE)
+    paused["deviceCharacterMap"].update(
+        {
+            "current_status_alias": "paused",
+            "current_status": "已暂停",
+            "program_remain_time": "100",
+        }
+    )
+    api[1].return_value = [paused]
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    ids = entity_ids(hass)
+    status = hass.states.get(ids["current_status_alias"])
+    assert status.state == "paused"
+    assert status.attributes["reported_status"] == "已暂停"
+    assert "paused" in KNOWN_STATUSES
+    assert "paused" in status.attributes["options"]
+    assert hass.states.get(ids["program_remain_time"]).state == "unknown"

@@ -90,7 +90,7 @@ async def test_start_program_uses_observed_empty_parameter_list_without_wake(
 ):
     client, state = service
     state["body"]["data"] = None
-    await client.async_start_program("private-device", "private-program")
+    await client.async_activate_program("private-device", "private-program")
     assert len(state["requests"]) == 1
     request = state["requests"][0]
     assert request.path == "/api/device/v2/deviceOperate"
@@ -129,7 +129,7 @@ async def test_invalid_program_identity_never_sends(
 ):
     client, state = service
     with pytest.raises(transport.MinijError):
-        await client.async_start_program(device_id, program_id)
+        await client.async_activate_program(device_id, program_id)
     assert state["requests"] == []
     assert not client.command_history
 
@@ -143,7 +143,7 @@ async def test_start_program_failure_never_retries_or_sends_power_on(
     state["status"] = status
     state["body"] = {"success": False}
     with pytest.raises(transport.MinijError):
-        await client.async_start_program("device", "program")
+        await client.async_activate_program("device", "program")
     assert len(state["requests"]) == 1
     assert state["request_body"]["operateType"] == "activate"
     assert client.command_history[-1]["function"] == "activate"
@@ -169,7 +169,8 @@ def wake_button(hass):  # noqa: F811
         last_update_success=True,
         async_refresh=AsyncMock(),
     )
-    entity = MinijWakeButton(parent, "synthetic-washer")
+    controls = SimpleNamespace(command_lock=asyncio.Lock())
+    entity = MinijWakeButton(parent, "synthetic-washer", controls)
     entity.hass = hass
     entity._active = True
     return entity

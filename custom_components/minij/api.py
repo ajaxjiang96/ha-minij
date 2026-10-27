@@ -380,18 +380,55 @@ class MinijClient:
             {"deviceId": device_id, "bucketCode": "", "operateType": "power_on"},
         )
 
-    async def async_start_program(self, device_id: str, program_id: str) -> None:
-        """Start with the App's observed default-parameter payload, once."""
+    async def async_get_running_program(self, device_id: str) -> str | None:
+        """Read the running program identity; an idle device returns null."""
+        if not isinstance(device_id, str) or not device_id.strip():
+            raise MinijError("Invalid device identifier")
+        data = await self._get(
+            "device/v2/getRunningCurrentDeviceMode?"
+            + urlencode({"deviceId": device_id, "bucketCode": ""})
+        )
+        if data is None:
+            return None
+        if not isinstance(data, dict):
+            raise MinijError("MiniJ returned an invalid running program")
+        program_id = data.get("id")
+        if not isinstance(program_id, str) or not program_id.strip():
+            raise MinijError("MiniJ returned an invalid running program identifier")
+        return program_id
+
+    async def async_activate_program(self, device_id: str, program_id: str) -> None:
+        """Start or resume with the App's observed empty parameter list, once."""
+        await self._program_command(device_id, program_id, "activate")
+
+    async def async_pause_program(self, device_id: str, program_id: str) -> None:
+        """Pause the identified running program with one observed request."""
+        await self._program_command(device_id, program_id, "pause")
+
+    async def async_power_off(self, device_id: str) -> None:
+        """Submit the App's stop/power-off payload once, without program data."""
+        if not isinstance(device_id, str) or not device_id.strip():
+            raise MinijError("Invalid device identifier")
+        await self._command(
+            "device/v2/deviceOperate",
+            {"deviceId": device_id, "bucketCode": "", "operateType": "power_off"},
+        )
+
+    async def _program_command(
+        self, device_id: str, program_id: str, operation: str
+    ) -> None:
+        """Share the exact App payload for activation and pause."""
         if any(
-            not isinstance(value, str) or not value for value in (device_id, program_id)
+            not isinstance(value, str) or not value.strip()
+            for value in (device_id, program_id)
         ):
-            raise MinijError("Invalid program start command")
+            raise MinijError("Invalid program command")
         await self._command(
             "device/v2/deviceOperate",
             {
                 "deviceId": device_id,
                 "bucketCode": "",
-                "operateType": "activate",
+                "operateType": operation,
                 "activateParam": {
                     "userDeviceModeId": program_id,
                     "userDeviceModeStatsSimpleList": [],
