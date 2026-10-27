@@ -2,19 +2,23 @@
 
 `custom:minij-card` 是专用前端卡片：水滴形洗衣机 SVG 线稿、深浅主题、运行时滚筒动画、
 云端剩余时间、随状态变化的主按钮，以及可展开的程序/参数和设备设置。
-与 MiniJ `0.4.0b5` 配合使用；这是 0.5 前端候选，不修改洗衣机控制协议。
+与 MiniJ `0.4.0b5` 配合使用；本版为 0.5.0b1 测试版，不修改洗衣机控制协议。
+
+![MiniJ 自定义卡片深浅主题](images/minij-card.png)
+
+*交互演示截图，数据为合成，不是实时机器状态。*
 
 ## 安装前端资源
 
 当前仓库在 HACS 中的类别是 **Integration**，只负责后端集成；添加或更新它不会自动安装卡片。
 前端候选通过独立 JavaScript 资源加载，尚未作为 HACS Dashboard 仓库发布。
 
-1. 在本 PR 的 **Checks → Validate → Card** 构建完成后，打开对应 Actions 运行页，
-   下载 `minij-card` artifact 并解压，得到 `minij-card.js`。下载 Actions 附件可能需要登录 GitHub。
-   开发者也可在仓库运行 `npm ci && npm run build`，使用 `dist/minij-card.js`。
+1. 在 [0.5.0b1 发布页](https://github.com/ajaxjiang96/ha-minij/releases/tag/v0.5.0b1)下载独立附件
+   [`minij-card.js`](https://github.com/ajaxjiang96/ha-minij/releases/download/v0.5.0b1/minij-card.js)，
+   需要时用同页 `SHA256SUMS` 核对。开发者也可运行 `npm ci && npm run build`，使用 `dist/minij-card.js`。
 2. 将这个文件复制到 HA 配置目录的 `www/minij-card.js`；没有 `www` 目录就创建它。
 3. 启用 HA 用户资料中的**高级模式**。打开 **设置 → 仪表盘 → ⋮ → 资源 → 添加资源**，
-   URL 填 `/local/minij-card.js?v=0.5-dev1`，类型选 **JavaScript 模块**。
+   URL 填 `/local/minij-card.js?v=0.5.0b1`，类型选 **JavaScript 模块**。
    若使用 YAML 模式仪表盘，在其 `resources` 配置中登记同一 URL 和 `type: module`。
 4. 刷新浏览器，编辑仪表盘并添加 **MiniJ** 卡片。在可视化编辑器中选择洗衣机的**状态**实体，
    不要选择设备上报程序或阶段。卡片只列出 MiniJ 的枚举状态传感器。
@@ -68,4 +72,4 @@ show_settings: true
 
 实现使用 [HA 自定义卡片](https://contributors.home-assistant.io/frontend/custom-ui/card/)
 和[可视化编辑器](https://contributors.home-assistant.io/frontend/custom-ui/card-editor/)机制。
-真实 HA 的资源加载、编辑器及当前实体映射仍需在候选安装后验收；浏览器演示、DOM 回归和现场设备效果分开记录。
+所有者 HA 的资源加载、编辑器及当前实体映射已核对，所有者反馈显示效果正常；其他实例仍需自行核对；浏览器演示、DOM 回归和现场设备效果分开记录。

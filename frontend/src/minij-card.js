@@ -3,6 +3,7 @@ import { live } from "lit/directives/live.js";
 import {
   discover,
   available,
+  selectable,
   remainingTime,
   primaryAction,
   statusLabel,
@@ -265,7 +266,9 @@ export class MinijCard extends LitElement {
       !available(this._state("status")) ||
       !(this._map?.roles[role]?.startsWith("button.")
         ? this._state(role) && this._state(role).state !== "unavailable"
-        : available(this._state(role)))
+        : this._map?.roles[role]?.startsWith("select.")
+          ? selectable(this._state(role))
+          : available(this._state(role)))
     );
   }
   _name() {
@@ -353,7 +356,9 @@ export class MinijCard extends LitElement {
     if (
       !(domain === "button"
         ? state && state.state !== "unavailable"
-        : available(state)) ||
+        : domain === "select"
+          ? selectable(state)
+          : available(state)) ||
       !available(this._state("status"))
     )
       return;
@@ -422,7 +427,7 @@ export class MinijCard extends LitElement {
       ><select
         aria-label=${label}
         data-entity=${entity}
-        ?disabled=${this._busy || this.preview || !available(state) || !available(this._state("status"))}
+        ?disabled=${this._busy || this.preview || !selectable(state) || !available(this._state("status"))}
         @change=${(e) => this._send(entity, e.target.value)}
       >
         ${!state?.attributes.options?.includes(state.state) ? html`<option value="">${this.t("unknown")}</option>` : nothing}

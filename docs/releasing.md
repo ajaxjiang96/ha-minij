@@ -1,6 +1,6 @@
 # 维护者版本发布流程
 
-当前发布准备为 `0.4.0b5`，标签应为 `v0.4.0b5`，保持测试版、非 latest。
+当前发布准备为 `0.5.0b1`，标签应为 `v0.5.0b1`，保持测试版、非 latest。
 既有稳定版为 `0.1.1`，测试版发布不自动替换稳定渠道。
 更新 manifest 只是准备工作，PR 合并不会自动发布；推送匹配标签才触发发布工作流。
 
@@ -17,8 +17,8 @@
 在已更新到目标主分支提交的检出目录中：
 
 ```sh
-git tag v0.4.0b5 <已审查的完整提交哈希>
-git push origin v0.4.0b5
+git tag v0.5.0b1 <已审查的完整提交哈希>
+git push origin v0.5.0b1
 ```
 
 这是实际发布动作，应在决定公开该版本时执行。
@@ -26,7 +26,7 @@ git push origin v0.4.0b5
 
 标签触发 `.github/workflows/release.yml`：先复用完整验证，全部成功后才进入发布任务。
 发布任务核对提交属于主分支历史、标签与 manifest 一致、版本属于 X.Y.Z 稳定版或 X.Y.ZbN 测试版、
-中文发布说明存在，再生成 ZIP 和 `SHA256SUMS`。
+中文发布说明存在，再构建独立卡片 JS、复制通知蓝图，生成后端 ZIP 和覆盖三个附件的 `SHA256SUMS`。
 稳定版显式设置 prerelease=false、latest=true；测试版保持 prerelease=true、latest=false。
 版本分类及标志通过回归测试，避免将测试版自动提升为稳定版。
 仅发布任务具有 `contents: write`；检出不保留凭据，不使用维护者个人令牌或本机 Keychain。
@@ -50,3 +50,9 @@ HACS 默认读取仓库的 `custom_components/minij/`，用 Release 标签选择
 
 确认 Release 的稳定/预发布标志与版本一致、标签/提交正确，ZIP 与校验文件可下载，
 并在 HACS 版本选择中能找到对应版本。再记录真实安装结果，避免把 CI 通过说成 HACS 前端验收。
+
+## 独立前端附件
+
+0.5 起同一 Release 附带 `minij-card.js` 和 `minij-device-notification.yaml`，与后端 ZIP 分别安装。
+发布任务用 `npm ci` 和锁定依赖重建前端；不把 JS 混入后端 ZIP，也不假装 HACS Integration 自动加载前端资源。
+发布后分别核对三个附件与 SHA256SUMS，确认前端为对应标签构建、蓝图与标签源码一致。

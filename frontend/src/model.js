@@ -54,6 +54,14 @@ export function discover(entries, entity) {
 export function available(state) {
   return !!state && !["unknown", "unavailable"].includes(state.state);
 }
+export function selectable(state) {
+  return (
+    !!state &&
+    state.state !== "unavailable" &&
+    Array.isArray(state.attributes.options) &&
+    state.attributes.options.length > 0
+  );
+}
 export function remainingTime(status, state) {
   if (
     status !== "working" ||

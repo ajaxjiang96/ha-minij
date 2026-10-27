@@ -29,6 +29,12 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
       - name: 确认主分支提交、版本与发布说明
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -38,8 +44,9 @@ jobs:
       - name: 生成手动安装包和校验文件
         run: |
           python scripts/package_integration.py
+          cp blueprints/automation/minij/device-notification.yaml dist/minij-device-notification.yaml
           cd dist
-          sha256sum ha-minij-*.zip > SHA256SUMS
+          sha256sum ha-minij-*.zip minij-card.js minij-device-notification.yaml > SHA256SUMS
       - name: 发布 GitHub 版本
         env:
           GH_TOKEN: ${{ github.token }}
@@ -47,7 +54,8 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           gh release create "$RELEASE_TAG" \
-            "dist/ha-minij-${RELEASE_VERSION}.zip" dist/SHA256SUMS \
+            "dist/ha-minij-${RELEASE_VERSION}.zip" dist/minij-card.js \
+            dist/minij-device-notification.yaml dist/SHA256SUMS \
             --verify-tag \
             --prerelease="$RELEASE_PRERELEASE" --latest="$RELEASE_LATEST" \
             --title "小吉 MiniJ ${RELEASE_TAG} · ${RELEASE_KIND}" \

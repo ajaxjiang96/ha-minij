@@ -286,3 +286,28 @@ test("a state change while start confirmation is open invalidates that confirmat
   assert.equal(card._feedback, "changed");
   card.remove();
 });
+
+test("unknown select values remain writable when current options are valid", async () => {
+  const data = fixture("waiting");
+  data.hass.states["select.test_program"].state = "unknown";
+  data.hass.states["select.test_parameter_washwatertemperature"].state =
+    "unknown";
+  const { card, calls } = await mount(data);
+  const program = card.shadowRoot.querySelector(
+    'select[aria-label="待启动程序"]',
+  );
+  const temperature = card.shadowRoot.querySelector(
+    'select[aria-label="温度"]',
+  );
+  assert.equal(program.disabled, false);
+  assert.equal(temperature.disabled, false);
+  await card._send("select.test_program", "标准");
+  await card._send("select.test_parameter_washwatertemperature", "40℃");
+  assert.equal(calls.length, 2);
+  await card._send("select.test_program", "not-an-option");
+  assert.equal(calls.length, 2);
+  data.hass.states["select.test_program"].state = "unavailable";
+  await card._send("select.test_program", "标准");
+  assert.equal(calls.length, 2);
+  card.remove();
+});
