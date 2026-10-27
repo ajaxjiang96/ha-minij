@@ -92,9 +92,20 @@ def api():
             return_value=[],
         ),
     ):
-        with patch(
-            "custom_components.minij.api.MinijClient.async_set_child_lock",
-            new_callable=AsyncMock,
+        with (
+            patch(
+                "custom_components.minij.api.MinijClient.async_set_child_lock",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "custom_components.minij.api.MinijClient.async_set_prompt_tone",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "custom_components.minij.api.MinijClient.async_get_prompt_tone",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
         ):
             yield profile, devices
 
@@ -552,7 +563,7 @@ async def test_new_device_removal_and_return_does_not_duplicate_entities(hass, a
     await hass.async_block_till_done()
     registry = er.async_get(hass)
     original_ids = {e.id for e in registry.entities.values() if e.platform == "minij"}
-    assert len(original_ids) == 16
+    assert len(original_ids) == 18
     api[1].return_value = [second]
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
@@ -701,6 +712,7 @@ async def test_status_translation_unknown_and_idle_context(hass, api):
     ids = entity_ids(hass)
     for alias, active in (
         ("resting", False),
+        ("waiting", False),
         ("working", True),
         ("device_exception", None),
         ("future-status", None),
@@ -723,11 +735,11 @@ async def test_status_translation_unknown_and_idle_context(hass, api):
             assert report.attributes["active_cycle_reported"] is active
         assert entity_ids(hass) == ids
     assert "future-status" not in state.attributes["options"]
-    for language, label in (("zh-Hans", "空闲"), ("en", "Idle")):
+    for language, label in (("zh-Hans", "待机"), ("en", "Standby")):
         strings = await async_get_translations(hass, language, "entity", {"minij"})
         prefix = "component.minij.entity.sensor."
         assert strings[f"{prefix}status.state.resting"] == label
-        for alias in ("working", "device_exception"):
+        for alias in ("waiting", "working", "device_exception"):
             assert strings[f"{prefix}status.state.{alias}"]
         for key in ("reported_program", "reported_process"):
             assert strings[f"{prefix}{key}.state_attributes.active_cycle_reported.name"]
@@ -861,7 +873,7 @@ async def test_duration_lifecycle_and_unknown_model(hass, api):
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
     entities = er.async_get(hass).entities.values()
-    assert len([e for e in entities if e.platform == "minij"]) == 13
+    assert len([e for e in entities if e.platform == "minij"]) == 14
     assert not any(
         e.unique_id == "unsupported-model-device_program_remain_time" for e in entities
     )
@@ -1135,7 +1147,7 @@ async def test_child_lock_disabled_by_default_and_verified_round_trip(hass, api)
     assert er.async_get(hass).async_get(control_id).disabled_by is not None
     assert hass.states.get(control_id) is None
     command.assert_not_awaited()
-    assert len(all_ids) == 8 and len(original) == 7
+    assert len(all_ids) == 9 and len(original) == 7
     await enable_child_lock_control(hass, entry)
     assert all(entity_ids(hass)[key] == value for key, value in original.items())
     assert hass.states.get(control_id).state == "off"
@@ -1359,3 +1371,174 @@ async def test_child_lock_exception_and_entity_translations(hass, language):
         "control_not_confirmed",
     ):
         assert exceptions[f"component.minij.exceptions.{key}.message"]
+
+
+async def enable_prompt_tone(hass, entry):
+    registry = er.async_get(hass)
+    entity_id = entity_ids(hass, include_disabled=True)["prompt_tone"]
+    registry.async_update_entity(entity_id, disabled_by=None)
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    return entity_id
+
+
+async def test_prompt_tone_disabled_no_extra_reads_and_round_trip(hass, api):
+    from custom_components.minij.api import MinijClient
+
+    read = MinijClient.async_get_prompt_tone
+    write = MinijClient.async_set_prompt_tone
+    entry = await configure(hass)
+    original = entity_ids(hass)
+    entity_id = entity_ids(hass, include_disabled=True)["prompt_tone"]
+    assert er.async_get(hass).async_get(entity_id).disabled_by is not None
+    assert hass.states.get(entity_id) is None
+    read.assert_not_awaited()
+    write.assert_not_awaited()
+    api[1].return_value[0]["deviceCharacterMap"]["current_status_alias"] = "waiting"
+    await enable_prompt_tone(hass, entry)
+    assert hass.states.get(entity_id).state == "on"
+    assert all(entity_ids(hass)[key] == value for key, value in original.items())
+
+    async def apply(device_id, enabled):
+        assert device_id == DEVICE["deviceId"]
+        read.return_value = enabled
+
+    write.side_effect = apply
+    for action, expected in [("turn_off", "off"), ("turn_on", "on")]:
+        before = read.await_count
+        await hass.services.async_call(
+            "switch", action, {"entity_id": entity_id}, blocking=True
+        )
+        assert hass.states.get(entity_id).state == expected
+        assert read.await_count == before + 2
+    assert write.await_count == 2
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": entity_id}, blocking=True
+    )
+    assert write.await_count == 2
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+@pytest.mark.parametrize(
+    "state", ["resting", "working", "device_exception", "future-state", None]
+)
+async def test_prompt_tone_rejects_other_device_states(hass, api, state):
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.minij.api import MinijClient
+
+    entry = await configure(hass)
+    entity_id = await enable_prompt_tone(hass, entry)
+    api[1].return_value[0]["deviceCharacterMap"]["current_status_alias"] = state
+    with pytest.raises(HomeAssistantError) as err:
+        await hass.services.async_call(
+            "switch", "turn_off", {"entity_id": entity_id}, blocking=True
+        )
+    assert err.value.translation_key == "prompt_tone_not_waiting"
+    MinijClient.async_set_prompt_tone.assert_not_awaited()
+
+
+async def test_prompt_tone_setting_missing_or_outage_never_writes(hass, api):
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.minij.api import MinijClient, MinijError
+
+    read = MinijClient.async_get_prompt_tone
+    entry = await configure(hass)
+    api[1].return_value[0]["deviceCharacterMap"]["current_status_alias"] = "waiting"
+    entity_id = await enable_prompt_tone(hass, entry)
+    read.return_value = None
+    with pytest.raises(HomeAssistantError) as err:
+        await hass.services.async_call(
+            "switch", "turn_off", {"entity_id": entity_id}, blocking=True
+        )
+    assert err.value.translation_key == "prompt_tone_not_supported"
+    assert hass.states.get(entity_id).state == "unknown"
+    read.side_effect = MinijError("private-response-canary")
+    with pytest.raises(HomeAssistantError) as err:
+        await hass.services.async_call(
+            "switch", "turn_off", {"entity_id": entity_id}, blocking=True
+        )
+    assert err.value.translation_key == "control_read_failed"
+    assert hass.states.get(entity_id).state == "unavailable"
+    assert hass.states.get(entity_ids(hass)["current_status_alias"]).state == "waiting"
+    MinijClient.async_set_prompt_tone.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "failure", ["auth", "rate", "timeout", "unchanged", "readback"]
+)
+async def test_prompt_tone_ack_or_failure_never_changes_state_optimistically(
+    hass, api, failure
+):
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.minij.api import MinijClient, MinijError, MinijRateLimitError
+
+    read = MinijClient.async_get_prompt_tone
+    write = MinijClient.async_set_prompt_tone
+    entry = await configure(hass)
+    api[1].return_value[0]["deviceCharacterMap"]["current_status_alias"] = "waiting"
+    entity_id = await enable_prompt_tone(hass, entry)
+    expected = {
+        "auth": "control_auth_failed",
+        "rate": "control_rate_limited",
+        "timeout": "control_send_uncertain",
+        "unchanged": "control_not_confirmed",
+        "readback": "control_not_confirmed",
+    }
+    if failure in ("auth", "rate", "timeout"):
+        write.side_effect = {
+            "auth": MinijAuthError,
+            "rate": MinijRateLimitError,
+            "timeout": MinijError,
+        }[failure]("private-canary")
+    if failure == "readback":
+
+        async def fail_readback(*args):
+            read.side_effect = MinijError("private-canary")
+
+        write.side_effect = fail_readback
+    with patch.object(type(entry), "async_start_reauth") as reauth:
+        with pytest.raises(HomeAssistantError) as err:
+            await hass.services.async_call(
+                "switch", "turn_off", {"entity_id": entity_id}, blocking=True
+            )
+        assert err.value.translation_key == expected[failure]
+        assert "private-canary" not in str(err.value)
+        assert reauth.call_count == (failure == "auth")
+    assert write.await_count == 1
+    assert hass.states.get(entity_id).state == (
+        "unavailable" if failure == "readback" else "on"
+    )
+
+
+async def test_prompt_tone_unload_during_settings_preflight_prevents_write(hass, api):
+    import asyncio
+
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.minij.api import MinijClient
+
+    entry = await configure(hass)
+    api[1].return_value[0]["deviceCharacterMap"]["current_status_alias"] = "waiting"
+    entity_id = await enable_prompt_tone(hass, entry)
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def blocked_read(*args):
+        started.set()
+        await release.wait()
+        return True
+
+    MinijClient.async_get_prompt_tone.side_effect = blocked_read
+    pending = asyncio.create_task(
+        hass.services.async_call(
+            "switch", "turn_off", {"entity_id": entity_id}, blocking=True
+        )
+    )
+    await started.wait()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    release.set()
+    with pytest.raises(HomeAssistantError):
+        await pending
+    MinijClient.async_set_prompt_tone.assert_not_awaited()

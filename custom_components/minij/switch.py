@@ -1,4 +1,4 @@
-"""Experimental child-lock control, disabled until explicitly enabled by the owner."""
+"""Experimental device controls, disabled until explicitly enabled by the owner."""
 
 import asyncio
 from typing import Any
@@ -13,6 +13,7 @@ from .api import MinijAuthError, MinijError, MinijRateLimitError
 from .const import DOMAIN
 from .coordinator import MinijCoordinator
 from .entity import MinijEntity
+from .settings import MinijPromptToneCoordinator
 
 PARALLEL_UPDATES = 0
 
@@ -35,23 +36,22 @@ async def async_setup_entry(
         } - known
         known.update(new_ids)
         async_add_entities(
-            MinijChildLockSwitch(coordinator, device_id) for device_id in new_ids
+            entity(coordinator, device_id)
+            for device_id in new_ids
+            for entity in (MinijChildLockSwitch, MinijPromptToneSwitch)
         )
 
     async_add_devices()
     entry.async_on_unload(coordinator.async_add_listener(async_add_devices))
 
 
-class MinijChildLockSwitch(MinijEntity, SwitchEntity):
+class MinijControlSwitch(MinijEntity, SwitchEntity):
     """Read actual state; never report a successful toggle from a cloud ACK alone."""
 
-    _attr_translation_key = "child_lock_control"
-    _attr_name = "Child lock control (experimental)"
-    _attr_icon = "mdi:lock-outline"
     _attr_entity_registry_enabled_default = False
 
-    def __init__(self, coordinator: MinijCoordinator, device_id: str) -> None:
-        super().__init__(coordinator, device_id, "child_lock_control")
+    def __init__(self, coordinator: MinijCoordinator, device_id: str, key: str) -> None:
+        super().__init__(coordinator, device_id, key)
         self._command_lock = asyncio.Lock()
         self._control_active = False
 
@@ -63,16 +63,7 @@ class MinijChildLockSwitch(MinijEntity, SwitchEntity):
         self._control_active = False
         await super().async_will_remove_from_hass()
 
-    @property
-    def is_on(self) -> bool | None:
-        value = self.characteristics.get("child_lock_status")
-        if value == "open":
-            return True
-        if value == "close":
-            return False
-        return None
-
-    def _validate_control(self) -> None:
+    def _validate_device(self) -> None:
         """Require a fresh, bound, single-bucket device on the observed firmware."""
         if not self._control_active or not self.available:
             raise HomeAssistantError(
@@ -91,14 +82,15 @@ class MinijChildLockSwitch(MinijEntity, SwitchEntity):
             raise ServiceValidationError(
                 translation_domain=DOMAIN, translation_key="control_not_authorized"
             )
-        if self.characteristics.get("current_status_alias") != "resting":
-            raise ServiceValidationError(
-                translation_domain=DOMAIN, translation_key="control_not_idle"
-            )
-        if self.is_on is None:
-            raise ServiceValidationError(
-                translation_domain=DOMAIN, translation_key="control_unknown_lock"
-            )
+
+    async def _async_refresh_control(self) -> None:
+        await self.coordinator.async_refresh()
+
+    async def _async_send(self, enabled: bool) -> None:
+        raise NotImplementedError
+
+    def _validate_control(self) -> None:
+        raise NotImplementedError
 
     async def _async_set(self, enabled: bool) -> None:
         async with self._command_lock:
@@ -106,14 +98,12 @@ class MinijChildLockSwitch(MinijEntity, SwitchEntity):
                 raise HomeAssistantError(
                     translation_domain=DOMAIN, translation_key="control_read_failed"
                 )
-            await self.coordinator.async_refresh()
+            await self._async_refresh_control()
             self._validate_control()
             if self.is_on is enabled:
                 return
             try:
-                await self.coordinator.client.async_set_child_lock(
-                    self.device_id, enabled
-                )
+                await self._async_send(enabled)
             except MinijAuthError as err:
                 self.coordinator.config_entry.async_start_reauth(self.hass)
                 raise HomeAssistantError(
@@ -128,7 +118,7 @@ class MinijChildLockSwitch(MinijEntity, SwitchEntity):
                     translation_domain=DOMAIN, translation_key="control_send_uncertain"
                 ) from err
             if self._control_active:
-                await self.coordinator.async_refresh()
+                await self._async_refresh_control()
             if (
                 not self._control_active
                 or not self.available
@@ -143,3 +133,84 @@ class MinijChildLockSwitch(MinijEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._async_set(False)
+
+
+class MinijChildLockSwitch(MinijControlSwitch):
+    """Retain the pending child-lock candidate; real running-state proof is absent."""
+
+    _attr_translation_key = "child_lock_control"
+    _attr_name = "Child lock control (experimental)"
+    _attr_icon = "mdi:lock-outline"
+
+    def __init__(self, coordinator: MinijCoordinator, device_id: str) -> None:
+        super().__init__(coordinator, device_id, "child_lock_control")
+
+    @property
+    def is_on(self) -> bool | None:
+        value = self.characteristics.get("child_lock_status")
+        if value == "open":
+            return True
+        if value == "close":
+            return False
+        return None
+
+    def _validate_control(self) -> None:
+        self._validate_device()
+        if self.characteristics.get("current_status_alias") != "resting":
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="control_not_idle"
+            )
+        if self.is_on is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="control_unknown_lock"
+            )
+
+    async def _async_send(self, enabled: bool) -> None:
+        await self.coordinator.client.async_set_child_lock(self.device_id, enabled)
+
+
+class MinijPromptToneSwitch(MinijControlSwitch):
+    """Only settings switchStatus is authoritative; never infer from a cloud ACK."""
+
+    _attr_translation_key = "prompt_tone"
+    _attr_name = "Prompt tone (experimental)"
+    _attr_icon = "mdi:volume-high"
+
+    def __init__(self, coordinator: MinijCoordinator, device_id: str) -> None:
+        super().__init__(coordinator, device_id, "prompt_tone")
+        self.settings = MinijPromptToneCoordinator(coordinator, device_id)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        await self.settings.async_refresh()
+        self.async_on_remove(
+            self.settings.async_add_listener(self.async_write_ha_state)
+        )
+
+    @property
+    def available(self) -> bool:
+        return super().available and self.settings.last_update_success
+
+    @property
+    def is_on(self) -> bool | None:
+        return self.settings.data
+
+    async def _async_refresh_control(self) -> None:
+        await self.coordinator.async_refresh()
+        if self._control_active and super().available:
+            await self.settings.async_refresh()
+
+    def _validate_control(self) -> None:
+        self._validate_device()
+        # Conservative initial scope: neither standby nor running is assumed writable.
+        if self.characteristics.get("current_status_alias") != "waiting":
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="prompt_tone_not_waiting"
+            )
+        if type(self.is_on) is not bool:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="prompt_tone_not_supported"
+            )
+
+    async def _async_send(self, enabled: bool) -> None:
+        await self.coordinator.client.async_set_prompt_tone(self.device_id, enabled)

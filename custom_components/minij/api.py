@@ -1,9 +1,10 @@
-"""MiniJ cloud reads and a narrowly scoped experimental child-lock command."""
+"""MiniJ cloud reads and a narrowly scoped experimental controls."""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
+from urllib.parse import urlencode
 
 import aiohttp
 
@@ -230,4 +231,33 @@ class MinijClient:
                 "onOff": enabled,
                 "bucketCode": "",
             },
+        )
+
+    async def async_get_prompt_tone(self, device_id: str) -> bool | None:
+        """Read only the explicit promptTone switch in this device's settings."""
+        if not isinstance(device_id, str) or not device_id:
+            raise MinijError("Invalid device identifier")
+        data = await self._get(
+            "device/v3/getDeviceMoreSetting?" + urlencode({"deviceId": device_id})
+        )
+        if not isinstance(data, dict):
+            raise MinijError("MiniJ returned invalid device settings")
+        items = data.get("fucntionSettingItemList")
+        if not isinstance(items, list) or any(not isinstance(x, dict) for x in items):
+            raise MinijError("MiniJ returned invalid function settings")
+        matches = [item for item in items if item.get("code") == "promptTone"]
+        if not matches:
+            return None
+        if len(matches) != 1 or type(matches[0].get("switchStatus")) is not bool:
+            raise MinijError("MiniJ returned invalid prompt-tone state")
+        return matches[0]["switchStatus"]
+
+    async def async_set_prompt_tone(self, device_id: str, enabled: bool) -> None:
+        """Submit the website's promptTone boolean once; no guessed bucket/value."""
+        if not isinstance(device_id, str) or not device_id or type(enabled) is not bool:
+            raise MinijError("Invalid prompt-tone command")
+        await self._request(
+            "POST",
+            "device/switchBasicFunction",
+            {"deviceId": device_id, "basicFunction": "promptTone", "onOff": enabled},
         )

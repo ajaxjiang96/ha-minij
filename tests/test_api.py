@@ -371,3 +371,88 @@ async def test_child_lock_failures_are_not_retried(service, status):
     with pytest.raises(api.MinijError):
         await client.async_set_child_lock("washer-test", True)
     assert len(state["requests"]) == 1
+
+
+async def test_prompt_tone_settings_uses_escaped_device_query_and_only_exact_code(
+    service,
+):
+    client, state = service
+    state["body"]["data"] = {
+        "fucntionSettingItemList": [
+            {"code": "intelligentBucketClean", "switchStatus": False},
+            {"code": "promptTone", "switchStatus": True, "private": "canary"},
+        ]
+    }
+    assert await client.async_get_prompt_tone("washer&other=private") is True
+    request = state["requests"][0]
+    assert request.method == "GET"
+    assert request.path == "/api/device/v3/getDeviceMoreSetting"
+    assert dict(request.query) == {"deviceId": "washer&other=private"}
+    assert request.headers["token"] == "test-token"
+
+
+@pytest.mark.parametrize(
+    "items,expected",
+    [([], None), ([{"code": "promptTone", "switchStatus": False}], False)],
+)
+async def test_prompt_tone_absence_is_unknown_and_false_is_valid(
+    service, items, expected
+):
+    client, state = service
+    state["body"]["data"] = {"fucntionSettingItemList": items}
+    assert await client.async_get_prompt_tone("washer-test") is expected
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        None,
+        [],
+        {},
+        {"fucntionSettingItemList": None},
+        {"fucntionSettingItemList": [None]},
+        *[
+            {"fucntionSettingItemList": [{"code": "promptTone", "switchStatus": value}]}
+            for value in [None, 0, 1, "open", "true"]
+        ],
+        {"fucntionSettingItemList": [{"code": "promptTone", "switchStatus": True}] * 2},
+    ],
+)
+async def test_prompt_tone_malformed_setting_never_becomes_false(service, data):
+    client, state = service
+    state["body"]["data"] = data
+    with pytest.raises(api.MinijError):
+        await client.async_get_prompt_tone("washer-test")
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_prompt_tone_exact_web_payload_no_bucket_or_value(service, enabled):
+    client, state = service
+    await client.async_set_prompt_tone("washer-test", enabled)
+    assert state["request_body"] == {
+        "deviceId": "washer-test",
+        "basicFunction": "promptTone",
+        "onOff": enabled,
+    }
+    assert len(state["requests"]) == 1
+    request = state["requests"][0]
+    assert request.method == "POST"
+    assert request.path == "/api/device/switchBasicFunction"
+    assert request.headers["token"] == "test-token"
+
+
+@pytest.mark.parametrize("status", [401, 403, 429, 500, 302])
+async def test_prompt_tone_failure_is_one_request(service, status):
+    client, state = service
+    state["status"] = status
+    with pytest.raises(api.MinijError):
+        await client.async_set_prompt_tone("washer-test", True)
+    assert len(state["requests"]) == 1
+
+
+@pytest.mark.parametrize("value", [0, 1, None, "true"])
+async def test_prompt_tone_rejects_invalid_action_before_request(service, value):
+    client, state = service
+    with pytest.raises(api.MinijError):
+        await client.async_set_prompt_tone("washer-test", value)
+    assert not state["requests"]

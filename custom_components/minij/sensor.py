@@ -15,7 +15,7 @@ from . import MinijConfigEntry
 from .coordinator import MinijCoordinator
 from .entity import MinijEntity
 
-KNOWN_STATUSES = ("resting", "working", "device_exception")
+KNOWN_STATUSES = ("resting", "waiting", "working", "device_exception")
 
 SENSORS = (
     SensorEntityDescription(
@@ -127,6 +127,8 @@ class MinijSensor(MinijEntity, SensorEntity):
         alias = self.characteristics.get("current_status_alias")
         return {
             "active_cycle_reported": (
-                alias == "working" if alias in ("working", "resting") else None
+                alias == "working"
+                if alias in ("working", "resting", "waiting")
+                else None
             )
         }
