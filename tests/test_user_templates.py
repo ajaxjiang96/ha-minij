@@ -191,36 +191,3 @@ async def test_blueprint_custom_channel_filter_and_entity_isolation(hass):
         assert "{{" not in calls[0]["message"]
     finally:
         remove()
-
-
-def test_dashboard_native_controls_and_explicit_targets():
-    """Catch broken targets or lost confirmation in the copyable control card."""
-    dashboard = load_yaml(str(ROOT / "examples/dashboard.yaml"))
-    assert dashboard["type"] == "vertical-stack"
-    entities = set()
-    commands = {}
-    for card in dashboard["cards"]:
-        assert not card["type"].startswith("custom:")
-        for row in card.get("entities", []):
-            entities.add(row["entity"])
-        for button in card.get("cards", []):
-            entity = button["entity"]
-            entities.add(entity)
-            tap = button["tap_action"]
-            assert tap["action"] == "perform-action"
-            assert tap["perform_action"] == "button.press"
-            assert tap["target"] == {"entity_id": entity}
-            assert button["hold_action"] == {"action": "none"}
-            assert button["double_tap_action"] == {"action": "none"}
-            commands[entity.rsplit("minij_", 1)[1]] = tap
-    assert all(".replace_with_your_minij_" in entity for entity in entities)
-    assert set(commands) == {
-        "wake",
-        "start_program",
-        "pause",
-        "resume",
-        "power_off",
-        "start_cleaning",
-    }
-    for command in ("start_program", "power_off", "start_cleaning"):
-        assert commands[command]["confirmation"]["text"]

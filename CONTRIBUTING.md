@@ -23,6 +23,13 @@ python3.14 -m venv .venv
 不得发送验证码或操作真实设备。Linux CI 分别测试声明的最低及当前发布版 HA。
 测试进程必须退出 0 才算通过，不能只看断言数量。
 
+## 前端卡片
+
+需要 Node.js 24：`npm ci` 安装锁定依赖，`npm test` 运行隔离 DOM/行为回归，
+`npm run format:check` 检查格式，`npm run build` 生成独立的 `dist/minij-card.js`。
+源文件在 `frontend/src/`，构建产物不提交 Git；CI 提供 `minij-card` 下载附件。
+前端不会轮询小吉云，状态来自 HA，写入通过已存在的实体动作；测试和演示只用合成数据。
+
 ## 证据与隐私
 
 原始研究材料保留在被忽略的 `analysis/` 中。公开样例使用 `test-account`、

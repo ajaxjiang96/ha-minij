@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>MiniJ 卡片 · 交互预览</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      padding: 28px;
+      background: #f5f5f5;
+      color: #181818;
+      font-family: Roboto, "PingFang SC", system-ui, sans-serif;
+    }
+    main {
+      max-width: 920px;
+      margin: auto;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 500;
+      margin: 0 0 6px;
+    }
+    p {
+      font-size: 13px;
+      color: #777;
+      margin: 0;
+    }
+    select {
+      background: white;
+      color: #181818;
+      border: 1px solid #ddd;
+      border-radius: 9px;
+      padding: 9px;
+      font: inherit;
+      font-size: 14px;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px;
+      align-items: start;
+    }
+    .dark {
+      --primary-text-color: #eee;
+      --secondary-text-color: #999;
+      --ha-card-background: #1c1c1e;
+      --card-background-color: #1c1c1e;
+      --divider-color: #404040;
+      --ha-card-border-color: #404040;
+      --secondary-background-color: #29292c;
+    }
+    minij-card {
+      --ha-card-border-radius: 20px;
+    }
+    output {
+      display: block;
+      font-size: 13px;
+      color: #666;
+      margin: 18px 0;
+      min-height: 22px;
+    }
+    footer {
+      font-size: 12px;
+      color: #888;
+      text-align: center;
+      margin: 24px 0;
+    }
+    @media (max-width: 650px) {
+      body {
+        padding: 16px;
+      }
+      .cards {
+        grid-template-columns: 1fr;
+      }
+      .dark {
+        display: none;
+      }
+      header {
+        align-items: start;
+      }
+      header select {
+        max-width: 110px;
+      }
+    }
+  </style>
+  <main>
+    <header>
+      <div>
+        <h1>MiniJ 卡片 · 交互预览</h1>
+        <p>模拟数据与本地交互，不连接 Home Assistant 或真实洗衣机。</p>
+      </div>
+      <select id="scenario" aria-label="演示状态">
+        <option value="working">工作中</option>
+        <option value="paused">已暂停</option>
+        <option value="resting">待机</option>
+        <option value="waiting">已唤醒</option>
+        <option value="unavailable">不可用</option>
+      </select>
+    </header>
+    <div class="cards">
+      <minij-card></minij-card><minij-card class="dark"></minij-card>
+    </div>
+    <output aria-live="polite"></output>
+    <footer>视觉与交互演示 · 非实时数据</footer>
+  </main>
+  <script type="module">
+    import "../dist/minij-card.js";
+    import { fixture } from "./tests/fixtures.js";
+    const cards = [...document.querySelectorAll("minij-card")];
+    for (const card of cards) {
+      const data = fixture();
+      data.hass.callService = async (domain, service, payload) => {
+        document.querySelector("output").textContent =
+          `模拟调用：${domain}.${service}`;
+        const old = data.hass.states[payload.entity_id];
+        const code = data.entries
+          .find((e) => e.entity_id === payload.entity_id)
+          .unique_id.slice("cloud-test_".length);
+        // Simulated reporting is separate from command acceptance. No network request.
+        setTimeout(() => {
+          const status = {
+            wake: "waiting",
+            start_program: "working",
+            pause: "paused",
+            resume: "working",
+            power_off: "resting",
+            start_cleaning: "working",
+          }[code];
+          if (domain === "button" && status)
+            data.hass.states = {
+              ...data.hass.states,
+              [data.entity]: {
+                ...data.hass.states[data.entity],
+                state: status,
+              },
+            };
+          if (domain === "switch")
+            data.hass.states = {
+              ...data.hass.states,
+              [payload.entity_id]: {
+                ...old,
+                state: service === "turn_on" ? "on" : "off",
+              },
+            };
+          if (domain === "select") {
+            data.hass.states = {
+              ...data.hass.states,
+              [payload.entity_id]: { ...old, state: payload.option },
+            };
+            if (code === "program") {
+              const id = "select.test_parameter_dryingcompoundoption";
+              data.hass.states = {
+                ...data.hass.states,
+                [id]: {
+                  ...data.hass.states[id],
+                  state: payload.option === "单烘干" ? "30分钟" : "无烘干",
+                  attributes: {
+                    ...data.hass.states[id].attributes,
+                    options:
+                      payload.option === "单烘干"
+                        ? ["30分钟", "60分钟"]
+                        : ["无烘干", "30分钟"],
+                  },
+                },
+              };
+            }
+          }
+          card.hass = { ...data.hass };
+        }, 400);
+      };
+      card.setConfig({ entity: data.entity });
+      card.hass = data.hass;
+      card.demo = data;
+    }
+    document.querySelector("#scenario").addEventListener("change", (e) => {
+      for (const card of cards) {
+        const { hass, entity } = card.demo;
+        hass.states = {
+          ...hass.states,
+          [entity]: { ...hass.states[entity], state: e.target.value },
+        };
+        card.hass = { ...hass };
+      }
+    });
+  </script>
+</html>
