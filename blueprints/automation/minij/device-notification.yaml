@@ -1,0 +1,76 @@
+blueprint:
+  name: 小吉 MiniJ · 完成与故障通知
+  description: >-
+    根据小吉官方消息发送通知，不从待机或剩余时间推断完成。
+    选择 MiniJ 的“设备通知”事件实体，然后选择消息类型和通知动作。
+    默认创建 HA 内部通知；可在动作编辑器中改为手机 App 通知等渠道。
+    自定义动作可使用 {{ minij_title }} 和 {{ minij_message }} 作为标题、消息，
+    {{ minij_event_type }} 为事件类型，{{ minij_notification_entity }} 为来源实体。
+    重启、重载或云端恢复不补发旧消息；通知可能随云端读取延迟或漏报。
+  domain: automation
+  author: ha-minij
+  source_url: https://github.com/ajaxjiang96/ha-minij/blob/main/blueprints/automation/minij/device-notification.yaml
+  homeassistant:
+    min_version: 2026.10.4
+  input:
+    notification_entity:
+      name: 洗衣机的设备通知
+      description: 选择 MiniJ 集成中的“设备通知”事件实体，每台洗衣机各建一个自动化。
+      selector:
+        entity:
+          filter:
+            - domain: event
+              integration: minij
+    event_types:
+      name: 通知类型
+      default:
+        - wash_completed
+        - cleaning_completed
+        - fault_reported
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: 洗衣完成（官方消息）
+              value: wash_completed
+            - label: 筒清洁完成（官方消息）
+              value: cleaning_completed
+            - label: 故障提醒（官方消息）
+              value: fault_reported
+    notification_actions:
+      name: 收到消息后执行
+      description: >-
+        默认在 HA 创建通知。手机推送请选择 HA 手机 App 的通知动作，
+        标题填 {{ minij_title }}，消息填 {{ minij_message }}。
+        也可配置多个动作；不要在这里添加启动、停止等洗衣机控制。
+      default:
+        - action: persistent_notification.create
+          data:
+            title: "{{ minij_title }}"
+            message: "{{ minij_message }}"
+            notification_id: "{{ minij_notification_entity }}_{{ minij_event_type }}"
+      selector:
+        action: {}
+variables:
+  minij_notification_entity: !input notification_entity
+triggers:
+  - trigger: event.received
+    target:
+      entity_id: !input notification_entity
+    options:
+      event_type: !input event_types
+actions:
+  - variables:
+      minij_event_type: "{{ trigger.to_state.attributes.event_type }}"
+      minij_title: >-
+        {{ {'wash_completed': '小吉洗衣完成',
+            'cleaning_completed': '小吉筒清洁完成',
+            'fault_reported': '小吉故障提醒'}[trigger.to_state.attributes.event_type] }}
+      minij_message: >-
+        {{ state_attr(minij_notification_entity, 'friendly_name') or '小吉洗衣机' }}：
+        {{ {'wash_completed': '小吉云端已发出洗衣完成消息。',
+            'cleaning_completed': '小吉云端已发出筒清洁完成消息。',
+            'fault_reported': '小吉云端已发出故障提醒，请查看机器及小吉 App。'}[trigger.to_state.attributes.event_type] }}
+  - sequence: !input notification_actions
+mode: queued
+max: 10

@@ -1,0 +1,7 @@
+# 推荐在可视化编辑器中选择 MiniJ 状态实体，此处是等价的最小配置。
+# 先安装 docs/dashboard.md 中的 minij-card.js 前端资源。
+type: custom:minij-card
+entity: sensor.replace_with_your_minij_status
+animation: true
+show_remaining: true
+show_settings: true
