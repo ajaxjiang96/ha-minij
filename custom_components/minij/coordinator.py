@@ -35,6 +35,7 @@ class MinijCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         )
         self.client = client
         self.last_successful_refresh: datetime | None = None
+        self.setting_reports: dict[str, dict[str, Any]] = {}
         self._retry_delay = 60
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:

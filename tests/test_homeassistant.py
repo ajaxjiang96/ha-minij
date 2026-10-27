@@ -106,6 +106,52 @@ def api():
                 new_callable=AsyncMock,
                 return_value=True,
             ),
+            patch(
+                "custom_components.minij.api.MinijClient.async_get_cleaning",
+                new_callable=AsyncMock,
+                return_value={
+                    "intelligentBucketCleanTrusteeship": None,
+                    "intelligentBucketCleanRemind": True,
+                    "bucketCleanRemindBeforeTimes": 40,
+                    "optionalValueList": [{"label": "40次", "value": 40}],
+                    "alreadyCleanTimes": 1,
+                    "deviceModeId": None,
+                },
+            ),
+            patch(
+                "custom_components.minij.api.MinijClient.async_set_cleaning_switch",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "custom_components.minij.api.MinijClient.async_set_cleaning_threshold",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "custom_components.minij.api.MinijClient.async_start_cleaning",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "custom_components.minij.api.MinijClient.async_get_programs",
+                new_callable=AsyncMock,
+                return_value={
+                    "frequentlyDeviceModeVOList": [],
+                    "otherDeviceModeVOList": [],
+                    "currentDeviceMode": None,
+                },
+            ),
+            patch(
+                "custom_components.minij.api.MinijClient.async_get_program_parameters",
+                new_callable=AsyncMock,
+                return_value={"userDeviceModeStatsList": []},
+            ),
+            patch(
+                "custom_components.minij.api.MinijClient.async_select_program",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "custom_components.minij.api.MinijClient.async_set_running_parameter",
+                new_callable=AsyncMock,
+            ),
         ):
             yield profile, devices
 
@@ -148,7 +194,7 @@ async def test_config_flow_entities_and_unload(hass, api):
     assert devices.await_count == 2  # Flow validation and one coordinator refresh.
 
     ids = entity_ids(hass)
-    assert len(ids) == 7
+    assert len(ids) == 13
     expected = {
         "current_status_alias": "resting",
         "current_mode": "标准",
@@ -157,6 +203,12 @@ async def test_config_flow_entities_and_unload(hass, api):
         "cloud_control_authorization": "on",
         "program_remain_time": "unknown",
         "device_notification": "unknown",
+        "child_lock_control": "off",
+        "prompt_tone": "on",
+        "cleaning_reminder": "on",
+        "cleaning_threshold": "40次",
+        "start_cleaning": "unknown",
+        "program": "unknown",
     }
     for key, value in expected.items():
         state = hass.states.get(ids[key])
@@ -323,7 +375,7 @@ async def test_sms_requires_submission_and_stores_only_token(hass, api, sms_api)
     assert entry.data == {"token": "sms-session-token"}
     assert entry.unique_id == "test-account"
     await hass.async_block_till_done()
-    assert len(entity_ids(hass)) == 7
+    assert len(entity_ids(hass)) == 13
 
 
 @pytest.mark.parametrize(
@@ -563,7 +615,7 @@ async def test_new_device_removal_and_return_does_not_duplicate_entities(hass, a
     await hass.async_block_till_done()
     registry = er.async_get(hass)
     original_ids = {e.id for e in registry.entities.values() if e.platform == "minij"}
-    assert len(original_ids) == 18
+    assert len(original_ids) == 26
     api[1].return_value = [second]
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
@@ -873,7 +925,7 @@ async def test_duration_lifecycle_and_unknown_model(hass, api):
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
     entities = er.async_get(hass).entities.values()
-    assert len([e for e in entities if e.platform == "minij"]) == 14
+    assert len([e for e in entities if e.platform == "minij"]) == 24
     assert not any(
         e.unique_id == "unsupported-model-device_program_remain_time" for e in entities
     )
@@ -1135,7 +1187,7 @@ async def enable_child_lock_control(hass, entry):
     return control_id
 
 
-async def test_child_lock_disabled_by_default_and_verified_round_trip(hass, api):
+async def test_child_lock_enabled_by_default_and_verified_round_trip(hass, api):
     """Loading never writes; only explicit enabled actions send one command."""
     from custom_components.minij.api import MinijClient
 
@@ -1144,10 +1196,10 @@ async def test_child_lock_disabled_by_default_and_verified_round_trip(hass, api)
     original = entity_ids(hass)
     all_ids = entity_ids(hass, include_disabled=True)
     control_id = all_ids["child_lock_control"]
-    assert er.async_get(hass).async_get(control_id).disabled_by is not None
-    assert hass.states.get(control_id) is None
+    assert er.async_get(hass).async_get(control_id).disabled_by is None
+    assert hass.states.get(control_id).state == "off"
     command.assert_not_awaited()
-    assert len(all_ids) == 9 and len(original) == 7
+    assert len(all_ids) == 13 and len(original) == 13
     await enable_child_lock_control(hass, entry)
     assert all(entity_ids(hass)[key] == value for key, value in original.items())
     assert hass.states.get(control_id).state == "off"
@@ -1178,38 +1230,63 @@ async def test_child_lock_disabled_by_default_and_verified_round_trip(hass, api)
 
 
 @pytest.mark.parametrize(
-    ("field", "value", "error_key"),
+    ("field", "value"),
     [
-        ("firmwareVersion", "unverified-firmware", "control_unsupported"),
-        ("wifiVersion", None, "control_unsupported"),
-        ("deviceModel", "unknown-model", "control_unsupported"),
-        ("bucketCode", "other-bucket", "control_unsupported"),
-        ("cloud_control_authorization", "close", "control_not_authorized"),
-        ("current_status_alias", "working", "control_not_idle"),
-        ("current_status_alias", "future-status", "control_not_idle"),
-        ("child_lock_status", None, "control_unknown_lock"),
+        ("firmwareVersion", "unverified-firmware"),
+        ("wifiVersion", None),
+        ("deviceModel", "unknown-model"),
+        ("bucketCode", "other-bucket"),
+        ("cloud_control_authorization", "close"),
+        ("cloud_control_authorization", None),
+        ("current_status_alias", "resting"),
+        ("current_status_alias", "waiting"),
+        ("current_status_alias", "working"),
+        ("current_status_alias", "future-status"),
+        ("current_status_alias", None),
     ],
 )
-async def test_child_lock_fresh_preflight_rejects_without_writing(
-    hass, api, field, value, error_key
+async def test_child_lock_does_not_impose_unverified_appliance_gates(
+    hass, api, field, value
 ):
-    from homeassistant.exceptions import HomeAssistantError
-
     from custom_components.minij.api import MinijClient
 
-    entry = await configure(hass)
-    control_id = await enable_child_lock_control(hass, entry)
+    await configure(hass)
+    control_id = entity_ids(hass)["child_lock_control"]
     changed = deepcopy(DEVICE)
     if field in ("firmwareVersion", "wifiVersion", "deviceModel", "bucketCode"):
         changed[field] = value
     else:
         changed["deviceCharacterMap"][field] = value
-    api[1].return_value = [changed]  # Cached state still looked eligible before action.
+    api[1].return_value = [changed]
+
+    async def apply_command(device_id, enabled):
+        updated = deepcopy(api[1].return_value)
+        updated[0]["deviceCharacterMap"]["child_lock_status"] = "open"
+        api[1].return_value = updated
+
+    MinijClient.async_set_child_lock.side_effect = apply_command
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": control_id}, blocking=True
+    )
+    MinijClient.async_set_child_lock.assert_awaited_once_with(DEVICE["deviceId"], True)
+    assert hass.states.get(control_id).state == "on"
+
+
+async def test_child_lock_unknown_state_prevents_invalid_toggle(hass, api):
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.minij.api import MinijClient
+
+    await configure(hass)
+    control_id = entity_ids(hass)["child_lock_control"]
+    changed = deepcopy(DEVICE)
+    changed["deviceCharacterMap"]["child_lock_status"] = None
+    api[1].return_value = [changed]
     with pytest.raises(HomeAssistantError) as result:
         await hass.services.async_call(
             "switch", "turn_on", {"entity_id": control_id}, blocking=True
         )
-    assert result.value.translation_key == error_key
+    assert result.value.translation_key == "control_unknown_lock"
     MinijClient.async_set_child_lock.assert_not_awaited()
 
 
@@ -1361,9 +1438,6 @@ async def test_child_lock_exception_and_entity_translations(hass, language):
     exceptions = await async_get_translations(hass, language, "exceptions", {"minij"})
     for key in (
         "control_read_failed",
-        "control_unsupported",
-        "control_not_authorized",
-        "control_not_idle",
         "control_unknown_lock",
         "control_auth_failed",
         "control_rate_limited",
@@ -1382,7 +1456,7 @@ async def enable_prompt_tone(hass, entry):
     return entity_id
 
 
-async def test_prompt_tone_disabled_no_extra_reads_and_round_trip(hass, api):
+async def test_prompt_tone_enabled_reads_without_writing_and_round_trip(hass, api):
     from custom_components.minij.api import MinijClient
 
     read = MinijClient.async_get_prompt_tone
@@ -1390,9 +1464,9 @@ async def test_prompt_tone_disabled_no_extra_reads_and_round_trip(hass, api):
     entry = await configure(hass)
     original = entity_ids(hass)
     entity_id = entity_ids(hass, include_disabled=True)["prompt_tone"]
-    assert er.async_get(hass).async_get(entity_id).disabled_by is not None
-    assert hass.states.get(entity_id) is None
-    read.assert_not_awaited()
+    assert er.async_get(hass).async_get(entity_id).disabled_by is None
+    assert hass.states.get(entity_id).state == "on"
+    read.assert_awaited_once()
     write.assert_not_awaited()
     api[1].return_value[0]["deviceCharacterMap"]["current_status_alias"] = "waiting"
     await enable_prompt_tone(hass, entry)
@@ -1420,22 +1494,34 @@ async def test_prompt_tone_disabled_no_extra_reads_and_round_trip(hass, api):
 
 
 @pytest.mark.parametrize(
-    "state", ["resting", "working", "device_exception", "future-state", None]
+    "state", ["resting", "waiting", "working", "device_exception", "future-state", None]
 )
-async def test_prompt_tone_rejects_other_device_states(hass, api, state):
-    from homeassistant.exceptions import HomeAssistantError
-
+async def test_prompt_tone_does_not_impose_unverified_state_gates(hass, api, state):
     from custom_components.minij.api import MinijClient
 
-    entry = await configure(hass)
-    entity_id = await enable_prompt_tone(hass, entry)
-    api[1].return_value[0]["deviceCharacterMap"]["current_status_alias"] = state
-    with pytest.raises(HomeAssistantError) as err:
-        await hass.services.async_call(
-            "switch", "turn_off", {"entity_id": entity_id}, blocking=True
-        )
-    assert err.value.translation_key == "prompt_tone_not_waiting"
-    MinijClient.async_set_prompt_tone.assert_not_awaited()
+    await configure(hass)
+    entity_id = entity_ids(hass)["prompt_tone"]
+    api[1].return_value[0]["deviceCharacterMap"].update(
+        current_status_alias=state, cloud_control_authorization="close"
+    )
+    api[1].return_value[0].update(
+        firmwareVersion="unverified-firmware",
+        wifiVersion=None,
+        deviceModel="unknown-model",
+        bucketCode="other-bucket",
+    )
+
+    async def apply_command(device_id, enabled):
+        MinijClient.async_get_prompt_tone.return_value = enabled
+
+    MinijClient.async_set_prompt_tone.side_effect = apply_command
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": entity_id}, blocking=True
+    )
+    MinijClient.async_set_prompt_tone.assert_awaited_once_with(
+        DEVICE["deviceId"], False
+    )
+    assert hass.states.get(entity_id).state == "off"
 
 
 async def test_prompt_tone_setting_missing_or_outage_never_writes(hass, api):
@@ -1620,3 +1706,145 @@ async def test_prompt_tone_unload_during_delayed_readback_stops_reads(hass, api)
         assert err.value.translation_key == "control_not_confirmed"
     assert read.await_count == count
     MinijClient.async_set_prompt_tone.assert_awaited_once()
+
+
+def program_metadata():
+    first = {
+        "id": "mode-a",
+        "chineseName": "标准",
+        "bid": 1,
+        "vid": 15,
+        "programNum": 0,
+    }
+    second = {
+        "id": "mode-b",
+        "chineseName": "快洗",
+        "bid": 1,
+        "vid": 15,
+        "programNum": 1,
+    }
+    return {
+        "frequentlyDeviceModeVOList": [first, second],
+        "otherDeviceModeVOList": [],
+        "currentDeviceMode": first,
+    }
+
+
+def parameter_metadata(program="mode-a"):
+    return {
+        "userDeviceModeStatsList": [
+            {
+                "id": "stat-" + program,
+                "userDeviceModeId": program,
+                "code": "washWaterTemperature",
+                "name": "洗涤温度",
+                "type": "choose",
+                "value": 0,
+                "optionalValueList": [
+                    {"label": "不加热", "value": 0},
+                    {"label": "40℃", "value": 3},
+                ],
+            }
+        ]
+    }
+
+
+async def test_real_ha_program_and_parameter_selects_follow_current_metadata(hass, api):
+    from custom_components.minij.api import MinijClient
+
+    programs, details = program_metadata(), parameter_metadata()
+    MinijClient.async_get_programs.return_value = programs
+    MinijClient.async_get_program_parameters.return_value = details
+    entry = await configure(hass)
+    ids = entity_ids(hass)
+    program_id, parameter_id = ids["program"], ids["parameter_washWaterTemperature"]
+    assert hass.states.get(program_id).attributes["options"] == ["标准", "快洗"]
+    assert hass.states.get(parameter_id).state == "不加热"
+
+    async def set_parameter(device_id, stat_id, code, value):
+        assert (
+            stat_id == "stat-mode-a" and code == "washWaterTemperature" and value == 3
+        )
+        details["userDeviceModeStatsList"][0]["value"] = value
+
+    MinijClient.async_set_running_parameter.side_effect = set_parameter
+    await hass.services.async_call(
+        "select",
+        "select_option",
+        {"entity_id": parameter_id, "option": "40℃"},
+        blocking=True,
+    )
+    assert hass.states.get(parameter_id).state == "40℃"
+
+    async def set_program(device_id, program):
+        assert program["id"] == "mode-b" and program["programNum"] == 1
+        programs["currentDeviceMode"] = programs["frequentlyDeviceModeVOList"][1]
+        MinijClient.async_get_program_parameters.return_value = {
+            "userDeviceModeStatsList": []
+        }
+
+    MinijClient.async_select_program.side_effect = set_program
+    await hass.services.async_call(
+        "select",
+        "select_option",
+        {"entity_id": program_id, "option": "快洗"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(program_id).state == "快洗"
+    assert hass.states.get(parameter_id).state == "unavailable"
+    assert hass.states.get(parameter_id).attributes["options"] == []
+    assert entity_ids(hass)["parameter_washWaterTemperature"] == parameter_id
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_changed_program_prevents_using_previous_parameter_identifier(hass, api):
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.minij.api import MinijClient
+
+    programs = program_metadata()
+    MinijClient.async_get_programs.return_value = programs
+    MinijClient.async_get_program_parameters.return_value = parameter_metadata()
+    await configure(hass)
+    entity_id = entity_ids(hass)["parameter_washWaterTemperature"]
+    programs["currentDeviceMode"] = programs["frequentlyDeviceModeVOList"][1]
+    MinijClient.async_get_program_parameters.return_value = parameter_metadata("mode-b")
+    with pytest.raises(HomeAssistantError) as error:
+        await hass.services.async_call(
+            "select",
+            "select_option",
+            {"entity_id": entity_id, "option": "40℃"},
+            blocking=True,
+        )
+    assert error.value.translation_key == "program_changed"
+    MinijClient.async_set_running_parameter.assert_not_awaited()
+
+
+async def test_local_control_diagnostics_keep_cached_choices_and_settings_without_ids(
+    hass, api
+):
+    import json
+
+    from custom_components.minij.api import MinijClient
+    from custom_components.minij.diagnostics import async_get_config_entry_diagnostics
+
+    MinijClient.async_get_programs.return_value = program_metadata()
+    MinijClient.async_get_program_parameters.return_value = parameter_metadata()
+    entry = await configure(hass)
+    before = MinijClient.async_get_programs.await_count
+    result = await async_get_config_entry_diagnostics(hass, entry)
+    snapshot = result["cached_devices"][0]
+    assert snapshot["settings"]["promptTone"]["value"] is True
+    assert snapshot["cleaning"]["reminder"] is True
+    assert snapshot["program_controls"]["program_count"] == 2
+    assert snapshot["program_controls"]["parameters"][0]["options"][1]["value"] == 3
+    for private in (
+        "mode-a",
+        "mode-b",
+        "stat-mode",
+        "washer-test-device",
+        "test-token",
+    ):
+        assert private not in json.dumps(result)
+    assert MinijClient.async_get_programs.await_count == before

@@ -379,7 +379,7 @@ async def test_prompt_tone_settings_uses_escaped_device_query_and_only_exact_cod
     client, state = service
     state["body"]["data"] = {
         "fucntionSettingItemList": [
-            {"code": "intelligentBucketClean", "switchStatus": False},
+            {"code": "otherFunction", "switchStatus": False},
             {"code": "promptTone", "switchStatus": True, "private": "canary"},
         ]
     }
@@ -456,3 +456,135 @@ async def test_prompt_tone_rejects_invalid_action_before_request(service, value)
     with pytest.raises(api.MinijError):
         await client.async_set_prompt_tone("washer-test", value)
     assert not state["requests"]
+
+
+async def test_program_and_parameter_requests_use_protocol_types_and_record_no_ids(
+    service,
+):
+    import json
+
+    client, state = service
+    state["body"]["data"] = None
+    await client.async_select_program(
+        "private-device", {"id": "private-mode", "bid": 1, "vid": 15, "programNum": 2}
+    )
+    assert state["request_body"] == {
+        "deviceId": "private-device",
+        "bid": 1,
+        "vid": 15,
+        "programNum": 2,
+        "userDeviceModeId": "private-mode",
+    }
+    assert state["requests"][-1].path == "/api/device/deviceModeSetup"
+    await client.async_set_running_parameter(
+        "private-device", "private-stat", "washWaterTemperature", 3
+    )
+    assert state["request_body"] == {
+        "deviceId": "private-device",
+        "basicFunction": "washWaterTemperature",
+        "value": "3",
+        "userDeviceModeStatsId": "private-stat",
+    }
+    assert state["requests"][-1].path == "/api/device/v2/workingUserStatsSetup"
+    history = json.dumps(list(client.command_history))
+    for private in ("private-device", "private-mode", "private-stat", "test-token"):
+        assert private not in history
+    assert all(command["result"] == "accepted" for command in client.command_history)
+    assert len(state["requests"]) == 2
+
+
+async def test_command_diagnostics_records_error_without_raw_response(service):
+    import json
+
+    client, state = service
+    state["status"] = 403
+    state["body"] = {
+        "success": False,
+        "errorMessage": "private-canary",
+        "data": {"token": "private-canary"},
+    }
+    with pytest.raises(api.MinijAuthError):
+        await client.async_set_prompt_tone("private-device", False)
+    assert len(state["requests"]) == 1
+    assert client.command_history[-1]["http_status"] == 403
+    assert client.command_history[-1]["result"] == "MinijAuthError"
+    assert "private" not in json.dumps(list(client.command_history))
+
+
+async def test_command_history_is_bounded_and_missing_setting_does_not_toggle(service):
+    client, state = service
+    for _ in range(31):
+        await client.async_set_prompt_tone("washer-test", True)
+    assert len(client.command_history) == 30
+    assert state["request_body"] == {
+        "deviceId": "washer-test",
+        "basicFunction": "promptTone",
+        "onOff": True,
+    }
+    state["body"]["data"] = {
+        "fucntionSettingItemList": [{"code": "promptTone", "switchStatus": False}]
+    }
+    assert await client.async_get_prompt_tone("washer-test") is False
+
+
+async def test_program_reads_escape_device_and_mode_queries(service):
+    client, state = service
+    await client.async_get_programs("device&x=1")
+    assert dict(state["requests"][-1].query) == {
+        "deviceId": "device&x=1",
+        "bucketCode": "",
+    }
+    await client.async_get_program_parameters("device&x=1", "mode&x=2")
+    assert dict(state["requests"][-1].query) == {
+        "deviceId": "device&x=1",
+        "userDeviceModeId": "mode&x=2",
+    }
+
+
+@pytest.mark.parametrize(
+    "program",
+    [
+        {"id": "x", "bid": True, "vid": 1, "programNum": 1},
+        {"id": "x", "bid": 256, "vid": 1, "programNum": 1},
+        {"id": "", "bid": 1, "vid": 1, "programNum": 1},
+    ],
+)
+async def test_invalid_program_payload_never_sends(service, program):
+    client, state = service
+    with pytest.raises(api.MinijError):
+        await client.async_select_program("device", program)
+    assert not state["requests"]
+
+
+@pytest.mark.parametrize("kind", ["reminder", "threshold", "clean_now"])
+async def test_cleaning_web_payloads_once_and_private_diagnostics(service, kind):
+    import json
+
+    client, state = service
+    if kind == "reminder":
+        await client.async_set_cleaning_switch(
+            "private-device", "canSelfCleaningReminder", False
+        )
+        expected = {
+            "deviceId": "private-device",
+            "bucketCode": "",
+            "basicFunction": "canSelfCleaningReminder",
+            "onOff": False,
+        }
+        route = "/api/device/switchBasicFunction"
+    elif kind == "threshold":
+        await client.async_set_cleaning_threshold("private-device", 40)
+        expected = {"deviceId": "private-device", "bucketCode": "", "cleanTimes": 40}
+        route = "/api/device/remindAfterCleanTimes"
+    else:
+        await client.async_start_cleaning("private-device", None)
+        expected = {
+            "deviceId": "private-device",
+            "bucketCode": "",
+            "deviceModeId": None,
+        }
+        route = "/api/device/immediateExecBucketClean"
+    assert state["request_body"] == expected
+    assert state["requests"][0].path == route
+    assert len(state["requests"]) == 1
+    assert "private-device" not in json.dumps(list(client.command_history))

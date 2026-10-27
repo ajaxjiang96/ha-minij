@@ -1,4 +1,4 @@
-"""Experimental device controls, disabled until explicitly enabled by the owner."""
+"""Device controls with cloud-enforced appliance permissions and conditions."""
 
 import asyncio
 from asyncio import sleep
@@ -11,10 +11,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import MinijConfigEntry
 from .api import MinijAuthError, MinijError, MinijRateLimitError
+from .cleaning import MinijCleaningControl, cleaning_coordinator
 from .const import DOMAIN
 from .coordinator import MinijCoordinator
 from .entity import MinijEntity
-from .settings import MinijPromptToneCoordinator
+from .settings import MinijSettingCoordinator
 
 PARALLEL_UPDATES = 0
 
@@ -24,17 +25,13 @@ async def async_setup_entry(
     entry: MinijConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Register disabled controls only for the target model, including new devices."""
+    """Register controls for bound devices, including devices added after setup."""
     coordinator = entry.runtime_data
     known: set[str] = set()
 
     @callback
     def async_add_devices() -> None:
-        new_ids = {
-            device_id
-            for device_id, device in coordinator.data.items()
-            if device.get("deviceModel") == "minij.washer.x68"
-        } - known
+        new_ids = coordinator.data.keys() - known
         known.update(new_ids)
         async_add_entities(
             entity(coordinator, device_id)
@@ -42,14 +39,46 @@ async def async_setup_entry(
             for entity in (MinijChildLockSwitch, MinijPromptToneSwitch)
         )
 
+    cleaning_known: dict[str, set[str]] = {}
+
+    @callback
+    def discover_cleaning() -> None:
+        for device_id in coordinator.data.keys() - cleaning_known.keys():
+            controls = cleaning_coordinator(coordinator, device_id)
+            known_keys: set[str] = set()
+            cleaning_known[device_id] = known_keys
+
+            @callback
+            def discover_switches(controls=controls, known_keys=known_keys) -> None:
+                if not controls.last_update_success or controls.data is None:
+                    return
+                for key, value in (
+                    ("cleaning_trusteeship", controls.data.trusteeship),
+                    ("cleaning_reminder", controls.data.reminder),
+                ):
+                    if type(value) is bool and key not in known_keys:
+                        known_keys.add(key)
+                        async_add_entities(
+                            [
+                                MinijCleaningSwitch(
+                                    coordinator, controls.device_id, controls, key
+                                )
+                            ]
+                        )
+
+            entry.async_on_unload(controls.async_add_listener(discover_switches))
+            discover_switches()
+
     async_add_devices()
+    discover_cleaning()
     entry.async_on_unload(coordinator.async_add_listener(async_add_devices))
+    entry.async_on_unload(coordinator.async_add_listener(discover_cleaning))
 
 
 class MinijControlSwitch(MinijEntity, SwitchEntity):
     """Read actual state; never report a successful toggle from a cloud ACK alone."""
 
-    _attr_entity_registry_enabled_default = False
+    _attr_entity_registry_enabled_default = True
 
     def __init__(self, coordinator: MinijCoordinator, device_id: str, key: str) -> None:
         super().__init__(coordinator, device_id, key)
@@ -65,23 +94,10 @@ class MinijControlSwitch(MinijEntity, SwitchEntity):
         await super().async_will_remove_from_hass()
 
     def _validate_device(self) -> None:
-        """Require a fresh, bound, single-bucket device on the observed firmware."""
+        """Require a live entity and a successful read of a still-bound device."""
         if not self._control_active or not self.available:
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="control_read_failed"
-            )
-        if (
-            self.device.get("deviceModel") != "minij.washer.x68"
-            or self.device.get("wifiVersion") != "1.0253"
-            or self.device.get("firmwareVersion") != "0 0003 1 0000"
-            or self.device.get("bucketCode") not in (None, "")
-        ):
-            raise ServiceValidationError(
-                translation_domain=DOMAIN, translation_key="control_unsupported"
-            )
-        if self.characteristics.get("cloud_control_authorization") != "open":
-            raise ServiceValidationError(
-                translation_domain=DOMAIN, translation_key="control_not_authorized"
             )
 
     async def _async_refresh_control(self) -> None:
@@ -160,10 +176,6 @@ class MinijChildLockSwitch(MinijControlSwitch):
 
     def _validate_control(self) -> None:
         self._validate_device()
-        if self.characteristics.get("current_status_alias") != "resting":
-            raise ServiceValidationError(
-                translation_domain=DOMAIN, translation_key="control_not_idle"
-            )
         if self.is_on is None:
             raise ServiceValidationError(
                 translation_domain=DOMAIN, translation_key="control_unknown_lock"
@@ -176,13 +188,17 @@ class MinijChildLockSwitch(MinijControlSwitch):
 class MinijPromptToneSwitch(MinijControlSwitch):
     """Only settings switchStatus is authoritative; never infer from a cloud ACK."""
 
+    _key = "prompt_tone"
+    _setting_code = "promptTone"
     _attr_translation_key = "prompt_tone"
     _attr_name = "Prompt tone (experimental)"
     _attr_icon = "mdi:volume-high"
 
     def __init__(self, coordinator: MinijCoordinator, device_id: str) -> None:
-        super().__init__(coordinator, device_id, "prompt_tone")
-        self.settings = MinijPromptToneCoordinator(coordinator, device_id)
+        super().__init__(coordinator, device_id, self._key)
+        self.settings = MinijSettingCoordinator(
+            coordinator, device_id, self._setting_code
+        )
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -206,11 +222,6 @@ class MinijPromptToneSwitch(MinijControlSwitch):
 
     def _validate_control(self) -> None:
         self._validate_device()
-        # Conservative initial scope: neither standby nor running is assumed writable.
-        if self.characteristics.get("current_status_alias") != "waiting":
-            raise ServiceValidationError(
-                translation_domain=DOMAIN, translation_key="prompt_tone_not_waiting"
-            )
         if type(self.is_on) is not bool:
             raise ServiceValidationError(
                 translation_domain=DOMAIN, translation_key="prompt_tone_not_supported"
@@ -229,3 +240,61 @@ class MinijPromptToneSwitch(MinijControlSwitch):
             await self._async_refresh_control()
             if not self.available or self.is_on is enabled or self.is_on is None:
                 return
+
+
+class MinijCleaningSwitch(MinijCleaningControl, SwitchEntity):
+    """Use the dedicated cleaning page; its more-settings menu is not a switch."""
+
+    _attr_icon = "mdi:washing-machine-alert"
+
+    def __init__(self, parent, device_id, controls, key) -> None:
+        super().__init__(parent, device_id, controls, key)
+        self.key = key
+        self._attr_translation_key = key
+        self._attr_name = (
+            "Automatic drum cleaning"
+            if key == "cleaning_trusteeship"
+            else "Drum cleaning reminder"
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        if not self.controls.data:
+            return None
+        return (
+            self.controls.data.trusteeship
+            if self.key == "cleaning_trusteeship"
+            else self.controls.data.reminder
+        )
+
+    async def _set(self, enabled: bool) -> None:
+        async with self.controls.command_lock:
+            await self._fresh()
+            if type(self.is_on) is not bool:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="cleaning_setting_unavailable",
+                )
+            if self.is_on is enabled:
+                return
+            state = self.controls.data
+            code = (
+                "intelligentSelfCleanTrusteeship"
+                if self.key == "cleaning_trusteeship"
+                else "intelligentSelfCleanStartRemindSwitch"
+                if state.trusteeship is True
+                else "canSelfCleaningReminder"
+            )
+            await self._send(
+                self.coordinator.client.async_set_cleaning_switch,
+                self.device_id,
+                code,
+                enabled,
+            )
+            await self._confirm(lambda: self.is_on is enabled)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._set(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._set(False)

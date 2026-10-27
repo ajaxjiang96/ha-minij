@@ -137,21 +137,31 @@
       },
       "prompt_tone": {
         "name": "提示音（实验）"
+      },
+      "cleaning_trusteeship": {
+        "name": "智能自清洁托管"
+      },
+      "cleaning_reminder": {
+        "name": "智能清洁通知"
+      }
+    },
+    "select": {
+      "program": {
+        "name": "程序选择"
+      },
+      "cleaning_threshold": {
+        "name": "筒清洁提醒运行次数"
+      }
+    },
+    "button": {
+      "start_cleaning": {
+        "name": "立即筒清洁"
       }
     }
   },
   "exceptions": {
     "control_read_failed": {
       "message": "无法读取当前设备状态，未发送控制指令。"
-    },
-    "control_unsupported": {
-      "message": "尚未验证此型号、固件或桶配置的控制能力。"
-    },
-    "control_not_authorized": {
-      "message": "设备未上报云端控制授权，请先在机器上确认授权。"
-    },
-    "control_not_idle": {
-      "message": "当前测试版只允许在设备明确空闲时验证童锁。"
     },
     "control_unknown_lock": {
       "message": "童锁状态未知，未发送指令。"
@@ -168,11 +178,17 @@
     "control_not_confirmed": {
       "message": "云端已接受请求，但最新回读未确认目标状态。请检查机器及 App；未自动重发。"
     },
-    "prompt_tone_not_waiting": {
-      "message": "此提示音候选仅允许设备明确上报 waiting（已唤醒、未运行）时操作。"
-    },
     "prompt_tone_not_supported": {
       "message": "本机设置表未明确提供有效的提示音开关，未发送指令。"
+    },
+    "program_option_unavailable": {
+      "message": "此选项已不在设备最新返回的列表中。"
+    },
+    "program_changed": {
+      "message": "当前程序已变化，请重新选择该程序的参数。"
+    },
+    "cleaning_setting_unavailable": {
+      "message": "本机未提供当前清洁开关，未发送指令。"
     }
   }
 }

@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import MinijAuthError, MinijError, MinijRateLimitError
 from .coordinator import MinijCoordinator
@@ -12,10 +13,10 @@ from .coordinator import MinijCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
-class MinijPromptToneCoordinator(DataUpdateCoordinator[bool | None]):
+class MinijSettingCoordinator(DataUpdateCoordinator[bool | None]):
     """A settings outage must not hide existing monitoring entities."""
 
-    def __init__(self, parent: MinijCoordinator, device_id: str) -> None:
+    def __init__(self, parent: MinijCoordinator, device_id: str, code: str) -> None:
         super().__init__(
             parent.hass,
             _LOGGER,
@@ -26,6 +27,7 @@ class MinijPromptToneCoordinator(DataUpdateCoordinator[bool | None]):
         )
         self.parent = parent
         self.device_id = device_id
+        self.code = code
         self._retry_delay = 60
 
     async def _async_update_data(self) -> bool | None:
@@ -34,6 +36,10 @@ class MinijPromptToneCoordinator(DataUpdateCoordinator[bool | None]):
             or self.device_id not in self.parent.data
         ):
             raise UpdateFailed("MiniJ device status unavailable", retry_after=60)
+        report = self.parent.setting_reports.setdefault(self.device_id, {}).setdefault(
+            self.code, {}
+        )
+        report["last_read_success"] = False
         try:
             state = await self.parent.client.async_get_prompt_tone(self.device_id)
         except MinijAuthError as err:
@@ -54,4 +60,7 @@ class MinijPromptToneCoordinator(DataUpdateCoordinator[bool | None]):
                 "MiniJ device status changed during settings read", retry_after=60
             )
         self._retry_delay = 60
+        report.update(
+            value=state, last_read_success=True, read_at=dt_util.utcnow().isoformat()
+        )
         return state

@@ -1,8 +1,10 @@
 """MiniJ cloud reads and a narrowly scoped experimental controls."""
 
+from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+from time import monotonic
 from typing import Any
 from urllib.parse import urlencode
 
@@ -20,7 +22,11 @@ CLIENT_HEADERS = {
 
 
 class MinijError(Exception):
-    """MiniJ connection or response failure."""
+    """MiniJ connection or response failure, without private response text."""
+
+    def __init__(self, message: str, *, http_status: int | None = None) -> None:
+        super().__init__(message)
+        self.http_status = http_status
 
 
 class MinijAuthError(MinijError):
@@ -36,7 +42,7 @@ class MinijRateLimitError(MinijError):
 
     def __init__(self, message: str, retry_after: float | None = None) -> None:
         """Keep the server delay without retaining private response content."""
-        super().__init__(message)
+        super().__init__(message, http_status=429)
         self.retry_after = retry_after
 
 
@@ -76,6 +82,8 @@ class MinijClient:
     def __init__(self, session: aiohttp.ClientSession, token: str = "") -> None:
         self._session = session
         self._headers = {**CLIENT_HEADERS, "token": token.strip()}
+        self.command_history: deque[dict[str, Any]] = deque(maxlen=30)
+        self._device_reports: dict[str, dict[str, Any]] = {}
 
     async def _request(
         self,
@@ -103,9 +111,14 @@ class MinijClient:
                 if response.status in (401, 403):
                     if login_request:
                         raise MinijLoginError("MiniJ rejected the login request")
-                    raise MinijAuthError("MiniJ rejected the session")
+                    raise MinijAuthError(
+                        "MiniJ rejected the session", http_status=response.status
+                    )
                 if response.status != 200:
-                    raise MinijError(f"MiniJ returned HTTP {response.status}")
+                    raise MinijError(
+                        f"MiniJ returned HTTP {response.status}",
+                        http_status=response.status,
+                    )
                 payload = await response.json()
         except aiohttp.ClientError, TimeoutError, ValueError:
             raise MinijError("Unable to read MiniJ cloud data") from None
@@ -114,7 +127,7 @@ class MinijClient:
         if payload.get("success") is not True:
             if login_request:
                 raise MinijLoginError("MiniJ did not accept the login request")
-            raise MinijError("MiniJ returned an unsuccessful response")
+            raise MinijError("MiniJ returned an unsuccessful response", http_status=200)
         return payload.get("data")
 
     async def _get(self, route: str) -> Any:
@@ -177,6 +190,23 @@ class MinijClient:
             characters = device.get("deviceCharacterMap")
             if characters is not None and not isinstance(characters, dict):
                 raise MinijError("MiniJ returned invalid device status")
+        self._device_reports = {
+            device["deviceId"]: {
+                key: value
+                for key, value in (device.get("deviceCharacterMap") or {}).items()
+                if key
+                in (
+                    "current_status_alias",
+                    "current_mode",
+                    "current_process",
+                    "child_lock_status",
+                    "cloud_control_authorization",
+                    "program_remain_time",
+                )
+                and type(value) in (str, int, bool)
+            }
+            for device in devices
+        }
         return devices
 
     async def async_get_notifications(self, device_id: str) -> list[DeviceNotification]:
@@ -222,8 +252,7 @@ class MinijClient:
         """Submit one explicit single-bucket command without retries or redirects."""
         if not isinstance(device_id, str) or not device_id or type(enabled) is not bool:
             raise MinijError("Invalid child-lock command")
-        await self._request(
-            "POST",
+        await self._command(
             "device/switchBasicFunction",
             {
                 "deviceId": device_id,
@@ -256,8 +285,148 @@ class MinijClient:
         """Submit the website's promptTone boolean once; no guessed bucket/value."""
         if not isinstance(device_id, str) or not device_id or type(enabled) is not bool:
             raise MinijError("Invalid prompt-tone command")
-        await self._request(
-            "POST",
+        await self._command(
             "device/switchBasicFunction",
             {"deviceId": device_id, "basicFunction": "promptTone", "onOff": enabled},
         )
+
+    async def async_get_programs(self, device_id: str) -> Any:
+        """Read this device's selectable programs and currently selected program."""
+        return await self._get(
+            "device/v2/getDeviceModeList?"
+            + urlencode({"deviceId": device_id, "bucketCode": ""})
+        )
+
+    async def async_get_program_parameters(
+        self, device_id: str, program_id: str
+    ) -> Any:
+        return await self._get(
+            "device/v2/getUserDeviceMode?"
+            + urlencode({"deviceId": device_id, "userDeviceModeId": program_id})
+        )
+
+    async def async_select_program(
+        self, device_id: str, program: dict[str, Any]
+    ) -> None:
+        if (
+            not isinstance(device_id, str)
+            or not device_id
+            or not isinstance(program.get("id"), str)
+            or not program["id"]
+            or any(
+                type(program.get(key)) is not int or not 0 <= program[key] <= 255
+                for key in ("bid", "vid", "programNum")
+            )
+        ):
+            raise MinijError("Invalid program selection")
+        await self._command(
+            "device/deviceModeSetup",
+            {
+                "deviceId": device_id,
+                "bid": program["bid"],
+                "vid": program["vid"],
+                "programNum": program["programNum"],
+                "userDeviceModeId": program["id"],
+            },
+        )
+
+    async def async_set_running_parameter(
+        self, device_id: str, parameter_id: str, code: str, value: int
+    ) -> None:
+        if (
+            any(
+                not isinstance(item, str) or not item
+                for item in (device_id, parameter_id, code)
+            )
+            or type(value) is not int
+        ):
+            raise MinijError("Invalid parameter command")
+        await self._command(
+            "device/v2/workingUserStatsSetup",
+            {
+                "deviceId": device_id,
+                "basicFunction": code,
+                "value": str(value),
+                "userDeviceModeStatsId": parameter_id,
+            },
+        )
+
+    async def async_get_cleaning(self, device_id: str) -> Any:
+        return await self._get(
+            "device/getIntelligentBucketClean?"
+            + urlencode({"deviceId": device_id, "bucketCode": ""})
+        )
+
+    async def async_set_cleaning_switch(
+        self, device_id: str, code: str, enabled: bool
+    ) -> None:
+        if (
+            code
+            not in (
+                "canSelfCleaningReminder",
+                "intelligentSelfCleanTrusteeship",
+                "intelligentSelfCleanStartRemindSwitch",
+            )
+            or type(enabled) is not bool
+        ):
+            raise MinijError("Invalid cleaning switch command")
+        await self._command(
+            "device/switchBasicFunction",
+            {
+                "deviceId": device_id,
+                "bucketCode": "",
+                "basicFunction": code,
+                "onOff": enabled,
+            },
+        )
+
+    async def async_set_cleaning_threshold(self, device_id: str, value: int) -> None:
+        if type(value) is not int:
+            raise MinijError("Invalid cleaning threshold")
+        await self._command(
+            "device/remindAfterCleanTimes",
+            {"deviceId": device_id, "bucketCode": "", "cleanTimes": value},
+        )
+
+    async def async_start_cleaning(
+        self, device_id: str, mode_id: str | int | None
+    ) -> None:
+        await self._command(
+            "device/immediateExecBucketClean",
+            {"deviceId": device_id, "bucketCode": "", "deviceModeId": mode_id},
+        )
+
+    async def _command(self, route: str, body: dict[str, Any]) -> None:
+        """Keep a bounded, credential-free command ledger for owner diagnostics."""
+        device_id = body["deviceId"]
+        record = {
+            "requested_at": datetime.now(UTC).isoformat(),
+            "route": route,
+            "function": body.get(
+                "basicFunction",
+                {
+                    "device/deviceModeSetup": "program",
+                    "device/remindAfterCleanTimes": "cleaning_threshold",
+                    "device/immediateExecBucketClean": "cleaning_start",
+                }.get(route, "control"),
+            ),
+            "target": body.get(
+                "onOff",
+                body.get("value", body.get("programNum", body.get("cleanTimes"))),
+            ),
+            "before": dict(self._device_reports.get(device_id, {})),
+            "result": "pending",
+        }
+        self.command_history.append(record)
+        started = monotonic()
+        try:
+            await self._request("POST", route, body)
+        except MinijError as err:
+            record["result"] = type(err).__name__
+            record["http_status"] = err.http_status
+            raise
+        else:
+            record["result"] = "accepted"
+            record["http_status"] = 200
+        finally:
+            record["duration_ms"] = round((monotonic() - started) * 1000)

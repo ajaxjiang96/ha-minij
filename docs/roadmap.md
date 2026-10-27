@@ -176,3 +176,12 @@ M1 的长周期观察与 M2 的日常取证可并行；控制协议可先研究�
 - [HA 配置流程](https://contributors.home-assistant.io/core/integrations/config-flow/)
 - [HA 共享读取](https://contributors.home-assistant.io/core/integrations/fetching-data/)
 - [HACS 发布要求](https://www.hacs.xyz/docs/publish/start/)
+
+
+## 0.4 本地集中验收调整
+
+所有者要求取消人为状态/固件等门槛、一次补齐有协议依据的控制，改为本地安装后集中测试。
+当前 0.4.0b2 增加程序、动态参数和智能清洁控制，默认启用，详见[本地验收指南](local-controls-0.4.md)。
+部署不创建 Release；生产 HA 原 MiniJ 目录和实体注册表先备份。
+最近 30 条脱敏命令和缓存元数据用于后续 Diagnostics 对照，测试后先下载、再重启。
+本地验收范围不自动提升为稳定版承诺，普通启动/暂停/取消的协议缺口继续跟踪。
