@@ -1542,3 +1542,81 @@ async def test_prompt_tone_unload_during_settings_preflight_prevents_write(hass,
     with pytest.raises(HomeAssistantError):
         await pending
     MinijClient.async_set_prompt_tone.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "updates,confirmed,read_count",
+    [
+        ([True, False], True, 2),
+        ([True, True, False], True, 3),
+        ([True, True, True], False, 3),
+    ],
+)
+async def test_prompt_tone_delayed_readback_is_bounded_without_resending(
+    hass, api, updates, confirmed, read_count
+):
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.minij.api import MinijClient
+
+    read = MinijClient.async_get_prompt_tone
+    write = MinijClient.async_set_prompt_tone
+    entry = await configure(hass)
+    api[1].return_value[0]["deviceCharacterMap"]["current_status_alias"] = "waiting"
+    entity_id = await enable_prompt_tone(hass, entry)
+
+    async def accepted(*args):
+        read.side_effect = updates
+
+    write.side_effect = accepted
+    before = read.await_count
+    with patch("custom_components.minij.switch.sleep", new_callable=AsyncMock) as wait:
+        if confirmed:
+            await hass.services.async_call(
+                "switch", "turn_off", {"entity_id": entity_id}, blocking=True
+            )
+        else:
+            with pytest.raises(HomeAssistantError) as err:
+                await hass.services.async_call(
+                    "switch", "turn_off", {"entity_id": entity_id}, blocking=True
+                )
+            assert err.value.translation_key == "control_not_confirmed"
+        assert wait.await_count == read_count - 1
+        assert all(call.args == (2,) for call in wait.await_args_list)
+    assert read.await_count == before + 1 + read_count
+    write.assert_awaited_once_with(DEVICE["deviceId"], False)
+    assert hass.states.get(entity_id).state == ("off" if confirmed else "on")
+
+
+async def test_prompt_tone_unload_during_delayed_readback_stops_reads(hass, api):
+    import asyncio
+
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.minij.api import MinijClient
+
+    entry = await configure(hass)
+    api[1].return_value[0]["deviceCharacterMap"]["current_status_alias"] = "waiting"
+    entity_id = await enable_prompt_tone(hass, entry)
+    read = MinijClient.async_get_prompt_tone
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def pause(_):
+        started.set()
+        await release.wait()
+
+    with patch("custom_components.minij.switch.sleep", side_effect=pause):
+        pending = asyncio.create_task(
+            hass.services.async_call(
+                "switch", "turn_off", {"entity_id": entity_id}, blocking=True
+            )
+        )
+        await started.wait()
+        count = read.await_count
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        release.set()
+        with pytest.raises(HomeAssistantError) as err:
+            await pending
+        assert err.value.translation_key == "control_not_confirmed"
+    assert read.await_count == count
+    MinijClient.async_set_prompt_tone.assert_awaited_once()
