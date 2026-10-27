@@ -319,7 +319,8 @@ export class MinijCard extends LitElement {
     if (this._dialog || this._disabled(role)) return;
     const epoch = this._epoch,
       entity = this._map.roles[role],
-      program = this._state("program")?.state;
+      program = this._state("program")?.state,
+      status = this._state("status")?.state;
     if (
       ["start", "stop", "clean"].includes(role) &&
       !(await this._confirmation(role))
@@ -329,6 +330,7 @@ export class MinijCard extends LitElement {
       epoch !== this._epoch ||
       this._disabled(role) ||
       this._map.roles[role] !== entity ||
+      this._state("status")?.state !== status ||
       (role === "start" && this._state("program")?.state !== program)
     ) {
       this._feedback = "changed";

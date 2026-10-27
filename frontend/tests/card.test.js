@@ -266,3 +266,23 @@ test("local draft feedback never claims an appliance report", async () => {
   assert.match(card.shadowRoot.textContent, /本地草稿/);
   card.remove();
 });
+
+test("a state change while start confirmation is open invalidates that confirmation", async () => {
+  const { card, hass, calls } = await mount(fixture("waiting"));
+  const command = card._request("start");
+  await flush(card);
+  hass.states = {
+    ...hass.states,
+    "sensor.test_current_status_alias": {
+      ...hass.states["sensor.test_current_status_alias"],
+      state: "working",
+    },
+  };
+  card.hass = { ...hass };
+  await flush(card);
+  card._finishConfirmation(true);
+  await command;
+  assert.equal(calls.length, 0);
+  assert.equal(card._feedback, "changed");
+  card.remove();
+});
