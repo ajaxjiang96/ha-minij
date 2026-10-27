@@ -14,6 +14,7 @@ from custom_components.minij.programs import (
     MinijProgramCoordinator,
     parse_parameters,
     parse_programs,
+    program_coordinator,
 )
 from custom_components.minij.select import MinijParameterSelect, MinijProgramSelect
 
@@ -260,7 +261,9 @@ async def test_program_failure_does_not_hide_parent_and_diagnostics_are_cache_on
 
 async def test_no_optimistic_parameter_change_and_no_write_retry(controls):
     entity = entity_for(controls, True)
-    with patch("custom_components.minij.select.sleep", new_callable=AsyncMock) as pause:
+    with patch(
+        "custom_components.minij.programs.sleep", new_callable=AsyncMock
+    ) as pause:
         with pytest.raises(HomeAssistantError) as err:
             await entity.async_select_option("30℃")
     assert err.value.translation_key == "control_not_confirmed"
@@ -393,3 +396,10 @@ async def test_parameter_unloaded_during_confirmation_does_not_confirm(controls)
         await entity.async_select_option("30℃")
     assert err.value.translation_key == "control_not_confirmed"
     client.async_set_running_parameter.assert_awaited_once()
+
+
+async def test_program_coordinator_reuses_existing_cache_across_platforms(controls):
+    controls.parent.program_controls = {controls.device_id: controls}
+    assert program_coordinator(controls.parent, controls.device_id) is controls
+    assert program_coordinator(controls.parent, controls.device_id) is controls
+    assert controls.parent.program_controls == {controls.device_id: controls}

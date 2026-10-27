@@ -371,6 +371,34 @@ class MinijClient:
             {"deviceId": device_id, "bucketCode": "", "deviceModeId": mode_id},
         )
 
+    async def async_power_on(self, device_id: str) -> None:
+        """Submit the App's wake operation once, without claiming execution."""
+        if not isinstance(device_id, str) or not device_id:
+            raise MinijError("Invalid device identifier")
+        await self._command(
+            "device/v2/deviceOperate",
+            {"deviceId": device_id, "bucketCode": "", "operateType": "power_on"},
+        )
+
+    async def async_start_program(self, device_id: str, program_id: str) -> None:
+        """Start with the App's observed default-parameter payload, once."""
+        if any(
+            not isinstance(value, str) or not value for value in (device_id, program_id)
+        ):
+            raise MinijError("Invalid program start command")
+        await self._command(
+            "device/v2/deviceOperate",
+            {
+                "deviceId": device_id,
+                "bucketCode": "",
+                "operateType": "activate",
+                "activateParam": {
+                    "userDeviceModeId": program_id,
+                    "userDeviceModeStatsSimpleList": [],
+                },
+            },
+        )
+
     async def _command(self, route: str, body: dict[str, Any]) -> None:
         """Keep a bounded, credential-free command ledger for owner diagnostics."""
         device_id = body["deviceId"]
@@ -379,10 +407,13 @@ class MinijClient:
             "route": route,
             "function": body.get(
                 "basicFunction",
-                {
-                    "device/remindAfterCleanTimes": "cleaning_threshold",
-                    "device/immediateExecBucketClean": "cleaning_start",
-                }.get(route, "control"),
+                body.get(
+                    "operateType",
+                    {
+                        "device/remindAfterCleanTimes": "cleaning_threshold",
+                        "device/immediateExecBucketClean": "cleaning_start",
+                    }.get(route, "control"),
+                ),
             ),
             "target": body.get(
                 "onOff",

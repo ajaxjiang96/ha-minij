@@ -154,6 +154,12 @@
       }
     },
     "button": {
+      "start_program": {
+        "name": "启动待选程序（实验）"
+      },
+      "wake": {
+        "name": "唤醒（实验）"
+      },
       "start_cleaning": {
         "name": "立即筒清洁"
       }

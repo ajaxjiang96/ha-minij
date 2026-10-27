@@ -1,20 +1,20 @@
 """Device-supplied program and parameter selects without local operating gates."""
 
-from asyncio import sleep
-from typing import Any
-
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import MinijConfigEntry
-from .api import MinijAuthError, MinijError, MinijRateLimitError
 from .cleaning import MinijCleaningControl, cleaning_coordinator
 from .const import DOMAIN
 from .coordinator import MinijCoordinator
-from .entity import MinijEntity
-from .programs import MinijProgramCoordinator, Parameter
+from .programs import (
+    MinijProgramControl,
+    MinijProgramCoordinator,
+    Parameter,
+    program_coordinator,
+)
 
 PARALLEL_UPDATES = 0
 
@@ -25,13 +25,13 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     parent = entry.runtime_data
-    parent.program_controls = {}
+    known_devices: set[str] = set()
 
     @callback
     def discover() -> None:
-        for device_id in parent.data.keys() - parent.program_controls.keys():
-            controls = MinijProgramCoordinator(parent, device_id)
-            parent.program_controls[device_id] = controls
+        for device_id in parent.data.keys() - known_devices:
+            known_devices.add(device_id)
+            controls = program_coordinator(parent, device_id)
             known: set[str] = set()
 
             @callback
@@ -49,7 +49,7 @@ async def async_setup_entry(
 
             entry.async_on_unload(controls.async_add_listener(discover_parameters))
             async_add_entities([MinijProgramSelect(parent, device_id, controls)])
-            hass.async_create_task(controls.async_refresh())
+            discover_parameters()
 
     cleaning_known: set[str] = set()
 
@@ -86,87 +86,7 @@ async def async_setup_entry(
     entry.async_on_unload(parent.async_add_listener(discover_cleaning))
 
 
-class MinijProgramControl(MinijEntity, SelectEntity):
-    """Share device lifecycle and serialize every program/parameter command."""
-
-    def __init__(
-        self,
-        parent: MinijCoordinator,
-        device_id: str,
-        controls: MinijProgramCoordinator,
-        key: str,
-    ) -> None:
-        super().__init__(parent, device_id, key)
-        self.controls = controls
-        self._active = False
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        self._active = True
-        self.async_on_remove(
-            self.controls.async_add_listener(self.async_write_ha_state)
-        )
-
-    async def async_will_remove_from_hass(self) -> None:
-        self._active = False
-        await super().async_will_remove_from_hass()
-
-    @property
-    def available(self) -> bool:
-        return (
-            super().available
-            and self.controls.last_update_success
-            and self.controls.data is not None
-        )
-
-    async def _fresh(self) -> None:
-        if not self._active:
-            self._read_failed()
-        await self.coordinator.async_refresh()
-        if self._active and super().available:
-            await self.controls.async_refresh()
-        if not self._active or not self.available:
-            self._read_failed()
-
-    def _read_failed(self) -> None:
-        raise HomeAssistantError(
-            translation_domain=DOMAIN, translation_key="control_read_failed"
-        )
-
-    async def _send(self, operation, *args: Any) -> None:
-        try:
-            await operation(*args)
-        except MinijAuthError as err:
-            self.coordinator.config_entry.async_start_reauth(self.hass)
-            raise HomeAssistantError(
-                translation_domain=DOMAIN, translation_key="control_auth_failed"
-            ) from err
-        except MinijRateLimitError as err:
-            raise HomeAssistantError(
-                translation_domain=DOMAIN, translation_key="control_rate_limited"
-            ) from err
-        except MinijError as err:
-            raise HomeAssistantError(
-                translation_domain=DOMAIN, translation_key="control_send_uncertain"
-            ) from err
-
-    async def _confirm(self, predicate) -> None:
-        for attempt in range(3):
-            if attempt:
-                await sleep(2)
-            if not self._active:
-                break
-            await self.controls.async_refresh()
-            if not self._active or not self.available:
-                break
-            if predicate():
-                return
-        raise HomeAssistantError(
-            translation_domain=DOMAIN, translation_key="control_not_confirmed"
-        )
-
-
-class MinijProgramSelect(MinijProgramControl):
+class MinijProgramSelect(MinijProgramControl, SelectEntity):
     _attr_translation_key = "program"
     _attr_icon = "mdi:washing-machine"
 
@@ -201,7 +121,7 @@ class MinijProgramSelect(MinijProgramControl):
             await self._send(self.controls.async_select_draft, target.id)
 
 
-class MinijParameterSelect(MinijProgramControl):
+class MinijParameterSelect(MinijProgramControl, SelectEntity):
     _attr_icon = "mdi:tune"
 
     def __init__(

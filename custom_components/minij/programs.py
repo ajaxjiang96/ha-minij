@@ -2,15 +2,18 @@
 
 import asyncio
 import logging
+from asyncio import sleep
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import MinijAuthError, MinijError, MinijRateLimitError
+from .const import DOMAIN
 from .coordinator import MinijCoordinator
+from .entity import MinijEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -261,3 +264,96 @@ class MinijProgramCoordinator(DataUpdateCoordinator[ProgramState]):
             if data
             else [],
         }
+
+
+def program_coordinator(
+    parent: MinijCoordinator, device_id: str
+) -> MinijProgramCoordinator:
+    """Return the one metadata cache used by program selects and start buttons."""
+    if not hasattr(parent, "program_controls"):
+        parent.program_controls = {}
+    if device_id not in parent.program_controls:
+        controls = MinijProgramCoordinator(parent, device_id)
+        parent.program_controls[device_id] = controls
+        parent.hass.async_create_task(controls.async_refresh())
+    return parent.program_controls[device_id]
+
+
+class MinijProgramControl(MinijEntity):
+    """Share device lifecycle and serialize every program/parameter command."""
+
+    def __init__(
+        self,
+        parent: MinijCoordinator,
+        device_id: str,
+        controls: MinijProgramCoordinator,
+        key: str,
+    ) -> None:
+        super().__init__(parent, device_id, key)
+        self.controls = controls
+        self._active = False
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._active = True
+        self.async_on_remove(
+            self.controls.async_add_listener(self.async_write_ha_state)
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        self._active = False
+        await super().async_will_remove_from_hass()
+
+    @property
+    def available(self) -> bool:
+        return (
+            super().available
+            and self.controls.last_update_success
+            and self.controls.data is not None
+        )
+
+    async def _fresh(self) -> None:
+        if not self._active:
+            self._read_failed()
+        await self.coordinator.async_refresh()
+        if self._active and super().available:
+            await self.controls.async_refresh()
+        if not self._active or not self.available:
+            self._read_failed()
+
+    def _read_failed(self) -> None:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN, translation_key="control_read_failed"
+        )
+
+    async def _send(self, operation, *args: Any) -> None:
+        try:
+            await operation(*args)
+        except MinijAuthError as err:
+            self.coordinator.config_entry.async_start_reauth(self.hass)
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="control_auth_failed"
+            ) from err
+        except MinijRateLimitError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="control_rate_limited"
+            ) from err
+        except MinijError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="control_send_uncertain"
+            ) from err
+
+    async def _confirm(self, predicate) -> None:
+        for attempt in range(3):
+            if attempt:
+                await sleep(2)
+            if not self._active:
+                break
+            await self.controls.async_refresh()
+            if not self._active or not self.available:
+                break
+            if predicate():
+                return
+        raise HomeAssistantError(
+            translation_domain=DOMAIN, translation_key="control_not_confirmed"
+        )

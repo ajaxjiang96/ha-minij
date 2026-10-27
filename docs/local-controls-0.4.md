@@ -1,4 +1,4 @@
-# 0.4.0b3 本地控制验收版
+# 0.4.0b4 本地控制验收版
 
 本版按所有者要求直接本地安装，不创建 GitHub Release 或发布标签。
 不再按 `resting/waiting/working`、型号、固件或“云端授权”上报字段提前拒绝控制。
@@ -10,6 +10,8 @@
 | --- | --- | --- |
 | 童锁 | 原生 childLock 布尔路径 | 本次诊断含 working 状态开/关后的云端上报变化；面板效果未单独确认 |
 | 提示音 | App 更多设置的 promptTone | waiting 已有实际静音/解除与恢复记录；其他状态待测 |
+| 唤醒（实验） | 原生菜单“开机”的 power_on | 断网生成的准确请求已观察；真实设备效果待所有者验收 |
+| 启动待选程序（实验） | 原生程序详情“立即运行”的 activate | 按所选程序 ID 单次发送，未修改参数时的原生空参数列表；真实启动待验收 |
 | 待启动程序 | 本机程序列表 + 目标程序参数读取 | 本地选择草稿，不发送设备命令；不同程序参数已只读核对 |
 | 洗涤水位、温度、漂洗次数、烘干、烘干强度、蒸汽除菌、UVC 筒灯 | 当前程序的 optionalValueList + workingUserStatsSetup | 全部 22 程序只读发现参数并集 7 项；所有者反馈多项有效，未逐项确认 |
 | 清洁提醒、托管（设备提供时）、提醒次数 | 智能清洁网页及本机元数据 | 本机提供提醒及 5–50 次的选项，托管字段为 null，App 隐藏 |
@@ -22,9 +24,17 @@
 例如“40℃”对应值 3，不能把数字 40 直接当协议值。输入必须在设备最新提供的选项里。
 这是参数正确性检查，不是人为限制运行状态。切换程序后不会继续使用先前程序的参数 ID。
 
-普通洗涤的启动/暂停/继续/取消/电源动作仍缺准确 operateType 取值，
-本版不把猜测字符串包装成可用按钮。立即筒清洁是独立且已确认载荷的网页路径，
-不能当作通用洗涤启动。旧版 `deviceModeSetup` 虽被云端接受，目录当前项却未随之变化；
+普通唤醒和启动已经取得原生 App 的准确动作值，分别使用 `power_on` 和 `activate`。
+先选“待启动程序”，核对下方参数，再显式按“启动待选程序（实验）”。启动不会自动调用唤醒，
+不会重发，也不把云端接受改成“运行中”。要只唤醒则单独按“唤醒（实验）”。
+程序草稿初值可能是云端目录保留的上次程序，启动前应明确选一次所需程序。
+
+本次观察到：联网只读加载完整标准程序详情后，断网点“立即运行”，
+`activateParam.userDeviceModeStatsSimpleList` 仍为 `[]`。本版复现这条“启动已保存程序”的路径，
+不拼接未经观察的参数映射。已有参数控制保留单参数写入；它们与实际启动效果的关联仍需设备验收。
+暂停、继续、取消和关机尚未取得准确动作值；不会将通知专用 activateCode 或筒清洁接口作为普通启动。
+
+旧版 `deviceModeSetup` 虽被云端接受，目录当前项却未随之变化；
 它不能证明交互式程序切换，已删除该写入路径，改为明确的待启动草稿。
 
 ## 本地安装与回退
@@ -53,6 +63,8 @@
 - 程序读取：GET device/v2/getDeviceModeList（deviceId、空 bucketCode）。
 - 参数读取：GET device/v2/getUserDeviceMode（deviceId、所选程序 ID）；不能固定读目录旧 currentDeviceMode.id。
 - 选择草稿：只读目标程序参数并更新本地完整快照，无程序写入请求。
+- 唤醒：POST device/v2/deviceOperate，`{deviceId, bucketCode: "", operateType: "power_on"}`。
+- 启动：同一路径，`operateType: "activate"`，另带 `activateParam: {userDeviceModeId, userDeviceModeStatsSimpleList: []}`。
 - 单参数写入：POST device/v2/workingUserStatsSetup，deviceId/basicFunction/value/userDeviceModeStatsId 均为字符串。
 - 批量 deviceStatsSetup 内部 map 键尚未确定，没有用猜测 map 取代单参数路径；是否在非运行状态接受由实际服务端结果核对。
 - 智能清洁：GET device/getIntelligentBucketClean；POST device/switchBasicFunction、device/remindAfterCleanTimes、device/immediateExecBucketClean。

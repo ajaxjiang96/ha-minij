@@ -154,6 +154,12 @@
       }
     },
     "button": {
+      "start_program": {
+        "name": "Start pending program (experimental)"
+      },
+      "wake": {
+        "name": "Wake (experimental)"
+      },
       "start_cleaning": {
         "name": "Start drum cleaning"
       }
