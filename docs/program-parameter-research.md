@@ -93,6 +93,13 @@ REA 的本轮 ADB 初始发现证据为
 本机 REA 的 JADX headless provider 仍不可用，不能据此声称完成 Android 反编译。
 原始日志和元数据仅保留在忽略目录 `analysis/`，不提交账号或设备标识。
 
+所有者随后授权仅对本地模拟器执行 `adb root`、读取 App `.jiagu` 代码目录。
+系统返回 `adbd cannot run as root in production builds`；标准 `run-as` 也返回
+`package not debuggable`。构建类型为 `user`、`ro.debuggable=0`；本机仅有
+Android 36 Google Play 镜像，没有其他已安装的可调试系统镜像。
+因此本轮没有取得保护壳释放的代码，授权本身不能替代成功读取的证据。
+进一步分析该代码需要另建可调试环境；不能把本次失败描述成服务端不支持参数覆盖。
+
 ## 下一步
 
 1. 只读加载目标程序后断网，分别修改烘干和其他参数，核对是否生成单参数保存请求，
