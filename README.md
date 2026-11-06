@@ -35,6 +35,9 @@
 当前验收基线：Wi-Fi `1.0253`，设备固件 `0 0003 1 0000`。
 其他型号和固件可以提供脱敏反馈，安装成功本身不等于控制已验证。
 
+社区已反馈 U10 Pro（`minij.pants.x1`）通过独立客户端使用部分云端协议成功，
+尚非本 HA 集成的型号验收；范围及烘干参数沿用问题见[程序参数研究](docs/program-parameter-research.md)。
+
 ## 安装
 
 推荐按照 [HACS 自定义仓库指南](docs/hacs-installation.md)安装和更新。
@@ -121,6 +124,7 @@ HA 会在外围添加系统信息，分享前请检查。
 - [MIoT 规格与参考库分析](docs/miot-reference.md)
 - [提示音协议与验收](docs/prompt-tone-control.md)
 - [童锁协议与验收](docs/child-lock-control.md)
+- [程序保存参数与启动覆盖研究](docs/program-parameter-research.md)
 - [日常洗涤观察指南](docs/cycle-validation.md)
 - [完整集成路线图](docs/roadmap.md)：可靠监测、周期自动化、控制与多型号扩展
 - [首个稳定监测版0.1.1验收记录](docs/stable-release-checklist.md)
