@@ -1,6 +1,6 @@
 # 程序保存参数与启动覆盖研究
 
-更新于 2026-11-06。对应 [Issue #29](https://github.com/ajaxjiang96/ha-minij/issues/29)。
+更新于 2026-11-07。对应 [Issue #29](https://github.com/ajaxjiang96/ha-minij/issues/29)。
 本记录区分社区客户端反馈、V6-XNB 历史读取和 Android App 静态路径；不改变集成控制行为。
 
 ## 社区反馈：U10 Pro
@@ -99,6 +99,27 @@ REA 的本轮 ADB 初始发现证据为
 Android 36 Google Play 镜像，没有其他已安装的可调试系统镜像。
 因此本轮没有取得保护壳释放的代码，授权本身不能替代成功读取的证据。
 进一步分析该代码需要另建可调试环境；不能把本次失败描述成服务端不支持参数覆盖。
+
+### 后续：独立可调试模拟器已建立
+
+2026-11-07 所有者接受官方镜像条款后，创建独立 Android 16 / API 36
+Google APIs ARM64 v8a revision 7 环境，包名为
+`system-images;android-36;google_apis;arm64-v8a`，不含 Play Store。
+官方镜像归档 SHA-1 核对为 `5a99183b6d924da606260e45fd41a3eb8eca6eb7`，
+本机 SHA-256 为 `fb47d861d6f87230ee0fe70f610d579935ca77f41a0eefbf391595d3dc4b5ee2`。
+
+新环境实际启动后返回 `ro.build.type=userdebug`、`ro.debuggable=1` 和 `uid=0(root)`。
+使用独立 AVD 数据目录和端口，保留原生产镜像环境，未复制任何账号数据。
+离线安装并启动用户提供的同一 APK；App 停在首次用户协议／隐私政策提示，未登录、未操作设备。
+
+本次获准读取的 `.jiagu` 目录内仅提取到 `libjiagu_64.so`（932704 字节，SHA-256
+`ba53108eec6c9a7daf032db41d72ae8bf5efc5df4f66d52c250b55d445d22a32`），
+`oat/arm64` 目录为空，未发现业务 DEX。root 和目录访问已经验证，
+但不能据此声称已恢复业务代码或证明启动覆盖语义；保护壳提取与后续代码取证仍需继续研究。
+
+镜像信息来自 [Google 官方 SDK 清单](https://dl.google.com/android/repository/sys-img/google_apis/sys-img2-3.xml)。
+[Android 官方 AVD 说明](https://developer.android.com/studio/run/managing-avds)
+解释了含 Play Store 的发行镜像不可取得 root；这里对非 Play 镜像的 root 结论另有本机实际验证。
 
 ## 下一步
 
