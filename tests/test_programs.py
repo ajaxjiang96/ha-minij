@@ -1,7 +1,9 @@
 """Synthetic device-provided program choices and command context regressions."""
 
 import asyncio
+import json
 from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -45,6 +47,9 @@ PARAMETER = {
     "userId": "private-canary",
     "deviceId": "private-canary",
 }
+DRYING_PARAMETERS = json.loads(
+    (Path(__file__).parent / "fixtures/drying_parameters.json").read_text()
+)
 
 
 def programs(current=PROGRAM_A):
@@ -214,6 +219,76 @@ async def test_parameter_uses_current_metadata_value_and_id_without_operating_ga
     controls.parent.client.async_set_running_parameter.assert_awaited_once()
     await entity.async_select_option("30℃")
     assert controls.parent.client.async_set_running_parameter.await_count == 1
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "label", "expected_value"),
+    [
+        ("v6_xnb_standard", "30分钟", 4),
+        ("u10_pro_daily", "30分钟", 5),
+        ("u10_pro_daily", "特干", 3),
+        ("u10_pro_daily", "无烘干", 0),
+    ],
+)
+async def test_drying_select_uses_device_options_including_zero(
+    controls, fixture_name, label, expected_value
+):
+    """Community metadata validates mapping, not U10 Pro hardware support."""
+    raw = deepcopy(DRYING_PARAMETERS[fixture_name])
+    if expected_value == 0:
+        raw["value"] = 2
+    client = controls.parent.client
+    client.async_get_program_parameters.return_value = parameters([raw])
+    await controls.async_refresh()
+    entity = MinijParameterSelect(
+        controls.parent, controls.device_id, controls, "dryingCompoundOption"
+    )
+    entity.hass = controls.hass
+    entity._active = True
+
+    async def write(device_id, parameter_id, code, value):
+        client.async_get_program_parameters.return_value["userDeviceModeStatsList"][0][
+            "value"
+        ] = value
+
+    client.async_set_running_parameter.side_effect = write
+    await entity.async_select_option(label)
+    client.async_set_running_parameter.assert_awaited_once_with(
+        controls.device_id, raw["id"], "dryingCompoundOption", expected_value
+    )
+    assert entity.current_option == label
+
+
+async def test_drying_mapping_uses_fresh_options_and_parameter_identity(controls):
+    """An existing select must not reuse another metadata snapshot's enum."""
+    client = controls.parent.client
+    client.async_get_program_parameters.return_value = parameters(
+        [DRYING_PARAMETERS["v6_xnb_standard"]]
+    )
+    await controls.async_refresh()
+    entity = MinijParameterSelect(
+        controls.parent, controls.device_id, controls, "dryingCompoundOption"
+    )
+    entity.hass = controls.hass
+    entity._active = True
+    assert "特干" not in entity.options
+
+    # Replace metadata before the command's own fresh read, without recreating UI.
+    raw = DRYING_PARAMETERS["u10_pro_daily"]
+    client.async_get_program_parameters.return_value = parameters([raw])
+
+    async def write(device_id, parameter_id, code, value):
+        client.async_get_program_parameters.return_value["userDeviceModeStatsList"][0][
+            "value"
+        ] = value
+
+    client.async_set_running_parameter.side_effect = write
+    await entity.async_select_option("30分钟")
+    client.async_set_running_parameter.assert_awaited_once_with(
+        controls.device_id, raw["id"], "dryingCompoundOption", 5
+    )
+    assert "特干" in entity.options
+    assert entity.current_option == "30分钟"
 
 
 async def test_changed_program_cannot_receive_cached_parameter_id(controls):
