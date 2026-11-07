@@ -1,0 +1,35 @@
+{
+  "v6_xnb_standard": {
+    "id": "synthetic-v6-standard-drying",
+    "code": "dryingCompoundOption",
+    "name": "烘干",
+    "type": "choose",
+    "value": 0,
+    "optionalValueList": [
+      {"label": "无烘干", "value": 0},
+      {"label": "即穿", "value": 2},
+      {"label": "30分钟", "value": 4},
+      {"label": "60分钟", "value": 5},
+      {"label": "90分钟", "value": 6},
+      {"label": "120分钟", "value": 7},
+      {"label": "150分钟", "value": 8},
+      {"label": "180分钟", "value": 9}
+    ]
+  },
+  "u10_pro_daily": {
+    "id": "synthetic-u10-daily-drying",
+    "code": "dryingCompoundOption",
+    "name": "烘干",
+    "type": "choose",
+    "value": 0,
+    "optionalValueList": [
+      {"label": "无烘干", "value": 0},
+      {"label": "即穿", "value": 2},
+      {"label": "特干", "value": 3},
+      {"label": "30分钟", "value": 5},
+      {"label": "60分钟", "value": 6},
+      {"label": "90分钟", "value": 7},
+      {"label": "120分钟", "value": 8}
+    ]
+  }
+}
