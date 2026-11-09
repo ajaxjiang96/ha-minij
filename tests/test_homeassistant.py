@@ -153,6 +153,10 @@ def api():
                 new_callable=AsyncMock,
             ),
             patch(
+                "custom_components.minij.api.MinijClient.async_start_program",
+                new_callable=AsyncMock,
+            ),
+            patch(
                 "custom_components.minij.api.MinijClient.async_activate_program",
                 new_callable=AsyncMock,
             ),
@@ -1929,8 +1933,16 @@ async def test_wake_and_start_selected_program_use_shared_controls_without_optim
         {"entity_id": ids["start_program"]},
         blocking=True,
     )
-    MinijClient.async_activate_program.assert_awaited_once_with(
-        DEVICE["deviceId"], "mode-b"
+    MinijClient.async_start_program.assert_awaited_once_with(
+        DEVICE["deviceId"],
+        "mode-b",
+        [
+            {
+                "userDeviceModeStatsId": "stat-mode-b",
+                "code": "washWaterTemperature",
+                "value": "0",
+            }
+        ],
     )
     # The start button and selectors refer to the same coordinator and draft.
     assert (
@@ -2028,3 +2040,42 @@ async def test_observed_paused_status_is_known_and_keeps_remaining_time_unknown(
     assert "paused" in KNOWN_STATUSES
     assert "paused" in status.attributes["options"]
     assert hass.states.get(ids["program_remain_time"]).state == "unknown"
+
+
+async def test_pending_and_running_parameter_entities_are_distinct_and_localized(
+    hass, api
+):
+    from custom_components.minij.api import MinijClient
+
+    hass.config.language = "zh-Hans"
+    MinijClient.async_get_programs.return_value = program_metadata()
+    MinijClient.async_get_program_parameters.side_effect = (
+        lambda device_id, program_id: parameter_metadata(program_id)
+    )
+    entry = await configure(hass)
+    controls = entry.runtime_data.program_controls[DEVICE["deviceId"]]
+    ids = entity_ids(hass)
+    pending = ids["parameter_washWaterTemperature"]
+    assert "running_parameter_washWaterTemperature" not in ids
+    assert er.async_get(hass).async_get(pending).original_name == "待启动·洗涤温度"
+    await hass.services.async_call(
+        "select",
+        "select_option",
+        {"entity_id": pending, "option": "40℃"},
+        blocking=True,
+    )
+    MinijClient.async_set_running_parameter.assert_not_awaited()
+    assert hass.states.get(pending).attributes["parameter_context"] == "pending"
+    assert hass.states.get(pending).state == "40℃"
+
+    api[1].return_value[0]["deviceCharacterMap"]["current_status_alias"] = "working"
+    MinijClient.async_get_running_program.return_value = "mode-b"
+    await entry.runtime_data.async_refresh()
+    await controls.async_refresh()
+    await hass.async_block_till_done()
+    running = entity_ids(hass)["running_parameter_washWaterTemperature"]
+    assert er.async_get(hass).async_get(running).original_name == "运行中·洗涤温度"
+    assert hass.states.get(running).attributes["parameter_context"] == "running"
+    assert hass.states.get(running).state == "不加热"
+    assert hass.states.get(pending).state == "40℃"
+    assert await hass.config_entries.async_unload(entry.entry_id)

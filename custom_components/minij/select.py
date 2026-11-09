@@ -32,20 +32,31 @@ async def async_setup_entry(
         for device_id in parent.data.keys() - known_devices:
             known_devices.add(device_id)
             controls = program_coordinator(parent, device_id)
-            known: set[str] = set()
+            known: set[tuple[str, str]] = set()
 
             @callback
             def discover_parameters(controls=controls, known=known) -> None:
                 if not controls.last_update_success or controls.data is None:
                     return
-                parameters = [
-                    x for x in controls.data.parameters if x.code not in known
-                ]
-                known.update(x.code for x in parameters)
-                async_add_entities(
-                    MinijParameterSelect(parent, controls.device_id, controls, x.code)
-                    for x in parameters
-                )
+                entities = []
+                for context, parameters, entity_type in (
+                    ("pending", controls.data.parameters, MinijParameterSelect),
+                    (
+                        "running",
+                        controls.data.running_parameters,
+                        MinijRunningParameterSelect,
+                    ),
+                ):
+                    for parameter in parameters:
+                        key = (context, parameter.code)
+                        if key not in known:
+                            known.add(key)
+                            entities.append(
+                                entity_type(
+                                    parent, controls.device_id, controls, parameter.code
+                                )
+                            )
+                async_add_entities(entities)
 
             entry.async_on_unload(controls.async_add_listener(discover_parameters))
             async_add_entities([MinijProgramSelect(parent, device_id, controls)])
@@ -107,6 +118,13 @@ class MinijProgramSelect(MinijProgramControl, SelectEntity):
         current = self.controls.data.current if self.available else None
         return current.name if current else None
 
+    @property
+    def extra_state_attributes(self):
+        return {
+            "parameter_context": "pending",
+            "draft_revision": self.controls.draft_revision,
+        }
+
     async def async_select_option(self, option: str) -> None:
         async with self.controls.command_lock:
             await self._fresh()
@@ -123,6 +141,7 @@ class MinijProgramSelect(MinijProgramControl, SelectEntity):
 
 class MinijParameterSelect(MinijProgramControl, SelectEntity):
     _attr_icon = "mdi:tune"
+    _attr_translation_key = "pending_parameter"
 
     def __init__(
         self,
@@ -133,7 +152,7 @@ class MinijParameterSelect(MinijProgramControl, SelectEntity):
     ) -> None:
         super().__init__(parent, device_id, controls, f"parameter_{code}")
         self.code = code
-        self._attr_name = self.parameter.name
+        self._attr_translation_placeholders = {"parameter": self.parameter.name}
 
     @property
     def parameter(self) -> Parameter | None:
@@ -159,6 +178,59 @@ class MinijParameterSelect(MinijProgramControl, SelectEntity):
 
     @property
     def current_option(self) -> str | None:
+        return self.controls.pending_label(self.code) if self.available else None
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "parameter_context": "pending",
+            "draft_revision": self.controls.draft_revision,
+        }
+
+    async def async_select_option(self, option: str) -> None:
+        origin = self.controls.data.current_id if self.controls.data else None
+        async with self.controls.command_lock:
+            await self._fresh()
+            if self.controls.data.current_id != origin:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN, translation_key="program_changed"
+                )
+            self.controls.select_parameter(self.code, option)
+
+
+class MinijRunningParameterSelect(MinijParameterSelect):
+    """Immediate writes use the actual running program, never the pending one."""
+
+    _attr_translation_key = "running_parameter"
+
+    def __init__(self, parent, device_id, controls, code):
+        MinijProgramControl.__init__(
+            self, parent, device_id, controls, f"running_parameter_{code}"
+        )
+        self.code = code
+        self._attr_translation_placeholders = {"parameter": self.parameter.name}
+
+    @property
+    def parameter(self):
+        return (
+            next(
+                (
+                    p
+                    for p in self.controls.data.running_parameters
+                    if p.code == self.code
+                ),
+                None,
+            )
+            if self.controls.data
+            else None
+        )
+
+    @property
+    def extra_state_attributes(self):
+        return {"parameter_context": "running"}
+
+    @property
+    def current_option(self) -> str | None:
         return (
             next(
                 (
@@ -173,14 +245,19 @@ class MinijParameterSelect(MinijProgramControl, SelectEntity):
         )
 
     async def async_select_option(self, option: str) -> None:
-        origin = self.controls.data.current_id if self.controls.data else None
+        origin = self.controls.data.running_id if self.controls.data else None
         async with self.controls.command_lock:
             await self._fresh()
-            if self.controls.data.current_id != origin:
+            if origin is None or self.controls.data.running_id != origin:
                 raise ServiceValidationError(
                     translation_domain=DOMAIN, translation_key="program_changed"
                 )
             parameter = self.parameter
+            if parameter is None:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="program_option_unavailable",
+                )
             target = next(
                 (value for label, value in parameter.options if label == option), None
             )
@@ -200,7 +277,7 @@ class MinijParameterSelect(MinijProgramControl, SelectEntity):
             )
             await self._confirm(
                 lambda: (
-                    self.controls.data.current_id == origin
+                    self.controls.data.running_id == origin
                     and self.parameter is not None
                     and self.parameter.value == target
                 )

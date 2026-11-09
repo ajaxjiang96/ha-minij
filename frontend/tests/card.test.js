@@ -54,8 +54,8 @@ test("registry discovery uses exact keys, respects device/platform/disabled and 
     platform: "minij",
     device_id: "other-device",
   });
-  data.entries.find((e) =>
-    e.unique_id.endsWith("_parameter_UVCDownlights"),
+  data.entries.find(
+    (e) => e.unique_id === "cloud-test_parameter_UVCDownlights",
   ).disabled_by = "user";
   const map = discover(data.entries, data.entity);
   assert.equal(map.roles.program, "select.test_program");
@@ -309,5 +309,64 @@ test("unknown select values remain writable when current options are valid", asy
   data.hass.states["select.test_program"].state = "unavailable";
   await card._send("select.test_program", "标准");
   assert.equal(calls.length, 2);
+  card.remove();
+});
+
+test("pending parameters are drafts, running parameters use independent services", async () => {
+  const { card, calls } = await mount();
+  assert.equal(card._map.runningParameters.length, 7);
+  assert.equal(card._map.parameters.length, 7);
+  await card._send("select.test_parameter_dryingcompoundoption", "无烘干");
+  assert.equal(card._feedback, "draft");
+  assert.equal(card._observation, null);
+  await card._send(
+    "select.test_running_parameter_dryingcompoundoption",
+    "30分钟",
+  );
+  assert.equal(card._feedback, "accepted");
+  assert.equal(
+    card._observation.entity,
+    "select.test_running_parameter_dryingcompoundoption",
+  );
+  assert.deepEqual(calls[1], [
+    "select",
+    "select_option",
+    {
+      entity_id: "select.test_running_parameter_dryingcompoundoption",
+      option: "30分钟",
+    },
+  ]);
+  card.preview = true;
+  await card._send(
+    "select.test_running_parameter_dryingcompoundoption",
+    "无烘干",
+  );
+  assert.equal(calls.length, 2);
+  card.remove();
+});
+
+test("parameter revision changes invalidate start confirmation, including change-and-revert", async () => {
+  const { card, hass, calls } = await mount(fixture("waiting"));
+  const command = card._request("start");
+  await flush(card);
+  hass.states["select.test_parameter_dryingcompoundoption"].attributes
+    .draft_revision++;
+  card._finishConfirmation(true);
+  await command;
+  assert.equal(calls.length, 0);
+  assert.equal(card._feedback, "changed");
+  card.remove();
+});
+
+test("old backend cannot present immediate parameter writes as local drafts", async () => {
+  const data = fixture("waiting");
+  delete data.hass.states["select.test_program"].attributes.parameter_context;
+  delete data.hass.states["select.test_parameter_dryingcompoundoption"]
+    .attributes.parameter_context;
+  const { card, calls } = await mount(data);
+  assert.equal(card._disabled("start"), true);
+  await card._send("select.test_parameter_dryingcompoundoption", "30分钟");
+  assert.equal(calls.length, 0);
+  assert.match(card.shadowRoot.textContent, /请同时更新 MiniJ 集成/);
   card.remove();
 });

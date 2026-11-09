@@ -3,11 +3,15 @@
 import asyncio
 import logging
 from asyncio import sleep
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    HomeAssistantError,
+    ServiceValidationError,
+)
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import MinijAuthError, MinijError, MinijRateLimitError
@@ -43,6 +47,9 @@ class ProgramState:
     parameters: tuple[Parameter, ...]
     cloud_catalog_current_id: str | None = None
     selection_source: str = "cloud_catalog"
+    draft_choices: tuple[tuple[str, str], ...] = ()
+    running_id: str | None = None
+    running_parameters: tuple[Parameter, ...] = ()
 
     @property
     def current(self) -> Program | None:
@@ -182,6 +189,29 @@ class MinijProgramCoordinator(DataUpdateCoordinator[ProgramState]):
                 if current_id is not None
                 else ()
             )
+            choices = (
+                self.data.draft_choices
+                if local and current_id == self.data.current_id
+                else ()
+            )
+            running_id, running_parameters = None, ()
+            status = (
+                self.parent.data.get(self.device_id, {}).get("deviceCharacterMap") or {}
+            ).get("current_status_alias")
+            if status in ("working", "paused"):
+                running_id = await self.parent.client.async_get_running_program(
+                    self.device_id
+                )
+                if running_id:
+                    running_parameters = (
+                        parameters
+                        if running_id == current_id
+                        else parse_parameters(
+                            await self.parent.client.async_get_program_parameters(
+                                self.device_id, running_id
+                            )
+                        )
+                    )
         except MinijAuthError as err:
             raise ConfigEntryAuthFailed("MiniJ rejected the session token") from err
         except MinijError as err:
@@ -201,7 +231,95 @@ class MinijProgramCoordinator(DataUpdateCoordinator[ProgramState]):
         self._retry_delay = 60
         if revision != self._selection_revision and self.data is not None:
             return self.data
-        return ProgramState(programs, current_id, parameters, cloud_current_id, source)
+        return ProgramState(
+            programs,
+            current_id,
+            parameters,
+            cloud_current_id,
+            source,
+            choices,
+            running_id,
+            running_parameters,
+        )
+
+    @property
+    def draft_revision(self) -> int:
+        return self._selection_revision
+
+    def pending_label(self, code: str) -> str | None:
+        if not self.data:
+            return None
+        parameter = next((p for p in self.data.parameters if p.code == code), None)
+        if parameter is None:
+            return None
+        selected = dict(self.data.draft_choices).get(code)
+        if selected is not None:
+            return selected if selected in dict(parameter.options) else None
+        return next(
+            (label for label, value in parameter.options if value == parameter.value),
+            None,
+        )
+
+    def pending_signature(self) -> tuple:
+        """Capture user-visible choices, independent of refreshed private IDs."""
+        if not self.data:
+            return ()
+        return (
+            self.data.current_id,
+            self.data.draft_choices,
+            tuple((p.code, self.pending_label(p.code)) for p in self.data.parameters),
+        )
+
+    def start_parameters(self) -> list[dict[str, str]]:
+        """Build only from fresh selected-program metadata, preserving zero."""
+        if not self.data or any(
+            code not in {p.code for p in self.data.parameters}
+            for code, _ in self.data.draft_choices
+        ):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="program_parameters_changed"
+            )
+        result = []
+        for parameter in self.data.parameters:
+            if not parameter.options:
+                continue
+            label = self.pending_label(parameter.code)
+            if label is None:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="program_parameters_changed",
+                )
+            result.append(
+                {
+                    "userDeviceModeStatsId": parameter.id,
+                    "code": parameter.code,
+                    "value": str(dict(parameter.options)[label]),
+                }
+            )
+        return result
+
+    def select_parameter(self, code: str, label: str) -> None:
+        if not self.data:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="program_option_unavailable"
+            )
+        parameter = next((p for p in self.data.parameters if p.code == code), None)
+        if parameter is None or label not in dict(parameter.options):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="program_option_unavailable"
+            )
+        choices = dict(self.data.draft_choices)
+        if choices.get(code) == label:
+            return
+        choices[code] = label
+        self._selection_revision += 1
+        self.async_set_updated_data(
+            replace(
+                self.data,
+                draft_choices=tuple(sorted(choices.items())),
+                selection_source="local_draft",
+            )
+        )
 
     async def async_select_draft(self, program_id: str) -> None:
         """Load a local pending selection; this does not send an appliance command."""
@@ -218,12 +336,12 @@ class MinijProgramCoordinator(DataUpdateCoordinator[ProgramState]):
             raise MinijError("MiniJ program changed during selection")
         self._selection_revision += 1
         self.async_set_updated_data(
-            ProgramState(
-                self.data.programs,
-                program_id,
-                parameters,
-                self.data.cloud_catalog_current_id,
-                "local_draft",
+            replace(
+                self.data,
+                current_id=program_id,
+                parameters=parameters,
+                selection_source="local_draft",
+                draft_choices=(),
             )
         )
 
@@ -240,6 +358,18 @@ class MinijProgramCoordinator(DataUpdateCoordinator[ProgramState]):
             else [],
             "current_program": data.current.name if data and data.current else None,
             "selection_source": data.selection_source if data else None,
+            "draft_revision": self.draft_revision,
+            "pending_parameters": [
+                {"code": p.code, "option": self.pending_label(p.code)}
+                for p in data.parameters
+            ]
+            if data
+            else [],
+            "running_parameters": [
+                {"code": p.code, "value": p.value} for p in data.running_parameters
+            ]
+            if data
+            else [],
             "cloud_catalog_current": next(
                 (
                     p.name

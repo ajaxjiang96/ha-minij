@@ -85,7 +85,7 @@ async def test_wake_timeout_records_uncertainty_without_retry(service):  # noqa:
     assert client.command_history[-1]["http_status"] is None
 
 
-async def test_start_program_uses_observed_empty_parameter_list_without_wake(
+async def test_resume_uses_observed_empty_parameter_list_without_wake(
     service,  # noqa: F811
 ):
     client, state = service
@@ -261,3 +261,60 @@ async def test_wake_presses_are_serialized_and_unload_blocks_queued_press(wake_b
     with pytest.raises(HomeAssistantError):
         await second
     parent.client.async_power_on.assert_awaited_once()
+
+
+async def test_start_sends_parameters_once_preserves_zero_and_omits_ids_from_ledger(
+    service,  # noqa: F811
+):
+    client, state = service
+    state["body"]["data"] = None
+    values = [
+        {
+            "userDeviceModeStatsId": "private-stat",
+            "code": "dryingCompoundOption",
+            "value": "0",
+        }
+    ]
+    await client.async_start_program("private-device", "private-program", values)
+    assert len(state["requests"]) == 1
+    assert state["request_body"]["activateParam"] == {
+        "userDeviceModeId": "private-program",
+        "userDeviceModeStatsSimpleList": values,
+    }
+    assert client.command_history[-1]["parameters"] == [
+        {"code": "dryingCompoundOption", "value": "0"}
+    ]
+    assert "private" not in json.dumps(list(client.command_history))
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        None,
+        {},
+        [None],
+        [{"code": "dryingCompoundOption", "value": "0"}],
+        [{"userDeviceModeStatsId": "s", "code": "dryingCompoundOption", "value": 0}],
+        [{"userDeviceModeStatsId": "s", "code": "a", "value": "0"}] * 2,
+    ],
+)
+async def test_malformed_start_parameters_never_send(service, values):  # noqa: F811
+    client, state = service
+    with pytest.raises(transport.MinijError):
+        await client.async_start_program("device", "program", values)
+    assert not state["requests"]
+
+
+async def test_parameterized_start_timeout_never_retries(service):  # noqa: F811
+    client, state = service
+    with patch.object(
+        client._session, "request", side_effect=TimeoutError("private")
+    ) as request:
+        with pytest.raises(transport.MinijError):
+            await client.async_start_program(
+                "device",
+                "program",
+                [{"userDeviceModeStatsId": "s", "code": "a", "value": "0"}],
+            )
+    assert request.call_count == 1
+    assert client.command_history[-1]["result"] == "MinijError"
