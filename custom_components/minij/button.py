@@ -11,7 +11,13 @@ from .cleaning import MinijCleaningControl, cleaning_coordinator
 from .const import DOMAIN
 from .coordinator import MinijCoordinator
 from .entity import MinijEntity
-from .programs import MinijProgramControl, MinijProgramCoordinator, program_coordinator
+from .programs import (
+    MinijProgramControl,
+    MinijProgramCoordinator,
+    build_start_parameters,
+    parse_parameters,
+    program_coordinator,
+)
 
 PARALLEL_UPDATES = 0
 
@@ -243,3 +249,54 @@ class MinijStartProgramButton(MinijProgramControl, ButtonEntity):
                 self.controls.start_parameters(),
             )
             # ACK means cloud acceptance; normal status polling supplies cycle state.
+
+    async def async_start_with_parameters(
+        self, program: str, parameters: dict[str, str]
+    ) -> dict:
+        """Start one explicit configuration without reading or changing UI drafts."""
+        async with self.controls.command_lock:
+            await self._fresh()
+            selected = next(
+                (p for p in self.controls.data.programs if p.name == program), None
+            )
+            if selected is None:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="program_option_unavailable",
+                )
+            try:
+                metadata = parse_parameters(
+                    await self.coordinator.client.async_get_program_parameters(
+                        self.device_id, selected.id
+                    )
+                )
+            except MinijAuthError as err:
+                self.coordinator.config_entry.async_start_reauth(self.hass)
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN, translation_key="control_auth_failed"
+                ) from err
+            except MinijRateLimitError as err:
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN, translation_key="control_rate_limited"
+                ) from err
+            except MinijError as err:
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN, translation_key="control_read_failed"
+                ) from err
+            if not self._active or not self.available:
+                self._read_failed()
+            if not any(
+                p.id == selected.id and p.name == program
+                for p in self.controls.data.programs
+            ):
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN, translation_key="program_changed"
+                )
+            payload = build_start_parameters(metadata, parameters)
+            await self._send(
+                self.coordinator.client.async_start_program,
+                self.device_id,
+                selected.id,
+                payload,
+            )
+            return {"status": "accepted", "program": program}

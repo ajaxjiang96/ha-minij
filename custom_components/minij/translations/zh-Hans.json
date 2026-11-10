@@ -217,6 +217,29 @@
     },
     "program_parameters_changed": {
       "message": "待启动参数已变化或尚未完整选择，请核对后重新启动。"
+    },
+    "program_target_unavailable": {
+      "message": "请选择一台已加载的小吉洗衣机的启动待选程序按钮。"
+    }
+  },
+  "services": {
+    "start_program": {
+      "name": "启动程序并设置参数（实验）",
+      "description": "一次提交所选程序和参数，不修改本地草稿，不自动唤醒或重试。成功仅表示云端接受，未提供的参数使用云端当前值。",
+      "fields": {
+        "entity_id": {
+          "name": "启动按钮",
+          "description": "选择一台洗衣机的“启动待选程序（实验）”按钮。"
+        },
+        "program": {
+          "name": "程序名称",
+          "description": "使用设备当前提供的完整程序名称。"
+        },
+        "parameters": {
+          "name": "参数选项",
+          "description": "参数 code 到设备选项名称的映射，例如 dryingCompoundOption: 无烘干。"
+        }
+      }
     }
   }
 }

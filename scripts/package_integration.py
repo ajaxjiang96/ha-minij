@@ -17,7 +17,7 @@ def main() -> None:
         for path in COMPONENT.rglob("*")
         if path.is_file()
         and "__pycache__" not in path.parts
-        and path.suffix in {".py", ".json", ".png", ".svg"}
+        and path.suffix in {".py", ".json", ".yaml", ".png", ".svg"}
     )
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in files:
