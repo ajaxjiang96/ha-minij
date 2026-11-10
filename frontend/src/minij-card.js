@@ -29,6 +29,18 @@ const TEXT = {
   remaining: ["云端剩余时间", "Cloud remaining time"],
   pending: ["待启动程序", "Pending program"],
   parameters: ["程序与参数", "Program & parameters"],
+  pending_settings: [
+    "待启动设置（本地草稿）",
+    "Pending settings (local draft)",
+  ],
+  running_settings: [
+    "运行中设置（立即提交）",
+    "Running settings (sent immediately)",
+  ],
+  update_backend: [
+    "请同时更新 MiniJ 集成，以使用待启动参数草稿。",
+    "Update the MiniJ integration to use pending parameter drafts.",
+  ],
   settings: ["设备设置", "Device settings"],
   unknown: ["未知", "Unknown"],
   wake: ["唤醒", "Wake"],
@@ -46,8 +58,8 @@ const TEXT = {
   confirm: ["确认", "Confirm"],
   sending: ["正在发送…", "Sending…"],
   draft: [
-    "待启动程序已选定（本地草稿），尚未启动。",
-    "Pending program selected as a local draft. The washer has not been started.",
+    "待启动设置已保存为本地草稿，尚未发送至机器。",
+    "Pending settings saved as a local draft, not yet sent to the appliance.",
   ],
   rinse: ["漂洗", "Rinse"],
   accepted: [
@@ -65,8 +77,8 @@ const TEXT = {
   ],
   preview: ["编辑预览：控制已停用", "Editor preview: controls disabled"],
   hint: [
-    "程序选择是本地草稿；参数修改会立即提交云端。状态通常每 60 秒更新，请勿因延迟重复点击。",
-    "Program selection is a local draft; parameter changes are sent immediately. Cloud status normally refreshes every 60 seconds. Avoid repeated taps while waiting.",
+    "待启动设置在启动时一并提交；运行中设置会立即提交云端。状态通常每 60 秒更新，请勿因延迟重复点击。",
+    "Pending settings are submitted together on start; running settings are sent immediately. Cloud status normally refreshes every 60 seconds. Avoid repeated taps while waiting.",
   ],
   idle: [
     "待机时程序与阶段可能保留上次值。",
@@ -260,6 +272,8 @@ export class MinijCard extends LitElement {
   }
   _disabled(role) {
     return (
+      (role === "start" &&
+        this._state("program")?.attributes.parameter_context !== "pending") ||
       this._busy ||
       this.preview ||
       !this.isConnected ||
@@ -318,11 +332,33 @@ export class MinijCard extends LitElement {
     this._resolveConfirmation?.(value);
     this._resolveConfirmation = null;
   }
+  _pendingSignature() {
+    return JSON.stringify(
+      [
+        this._state("program"),
+        ...this._map.parameters.map(
+          (entry) => this.hass.states[entry.entity_id],
+        ),
+      ].map((state) => [
+        state?.entity_id,
+        state?.state,
+        state?.attributes.options,
+        state?.attributes.draft_revision,
+      ]),
+    );
+  }
+  _pendingUnsupported(entity) {
+    return (
+      (entity === this._map.roles.program ||
+        this._map.parameters.some((entry) => entry.entity_id === entity)) &&
+      this.hass.states[entity]?.attributes.parameter_context !== "pending"
+    );
+  }
   async _request(role, option) {
     if (this._dialog || this._disabled(role)) return;
     const epoch = this._epoch,
       entity = this._map.roles[role],
-      program = this._state("program")?.state,
+      program = this._pendingSignature(),
       status = this._state("status")?.state;
     if (
       ["start", "stop", "clean"].includes(role) &&
@@ -334,7 +370,7 @@ export class MinijCard extends LitElement {
       this._disabled(role) ||
       this._map.roles[role] !== entity ||
       this._state("status")?.state !== status ||
-      (role === "start" && this._state("program")?.state !== program)
+      (role === "start" && this._pendingSignature() !== program)
     ) {
       this._feedback = "changed";
       return;
@@ -350,6 +386,7 @@ export class MinijCard extends LitElement {
       ![
         ...Object.values(this._map.roles),
         ...this._map.parameters.map((p) => p.entity_id),
+        ...this._map.runningParameters.map((p) => p.entity_id),
       ].includes(entity)
     )
       return;
@@ -359,7 +396,8 @@ export class MinijCard extends LitElement {
         : domain === "select"
           ? selectable(state)
           : available(state)) ||
-      !available(this._state("status"))
+      !available(this._state("status")) ||
+      this._pendingUnsupported(entity)
     )
       return;
     if (domain === "select" && !state.attributes.options?.includes(option)) {
@@ -402,8 +440,9 @@ export class MinijCard extends LitElement {
     try {
       await this.hass.callService(domain, service, data);
       if (epoch !== this._epoch || !this.isConnected) return;
-      this._feedback = role === "program" ? "draft" : "accepted";
-      if (expected && role !== "program") {
+      const draft = state.attributes.parameter_context === "pending";
+      this._feedback = draft ? "draft" : "accepted";
+      if (expected && !draft) {
         const observedEntity =
           domain === "button" ? this._map.roles.status : entity;
         const before = domain === "button" ? status : state;
@@ -427,7 +466,7 @@ export class MinijCard extends LitElement {
       ><select
         aria-label=${label}
         data-entity=${entity}
-        ?disabled=${this._busy || this.preview || !selectable(state) || !available(this._state("status"))}
+        ?disabled=${this._pendingUnsupported(entity) || this._busy || this.preview || !selectable(state) || !available(this._state("status"))}
         @change=${(e) => this._send(entity, e.target.value)}
       >
         ${!state?.attributes.options?.includes(state.state) ? html`<option value="">${this.t("unknown")}</option>` : nothing}
@@ -520,8 +559,18 @@ export class MinijCard extends LitElement {
             <summary>${this.t("parameters")}${icon("arrow")}</summary>
             <div class="panel">
               <p class="hint">${this.t("hint")}</p>
+              ${this._state("program")?.attributes.parameter_context !== "pending" ? html`<p class="hint">${this.t("update_backend")}</p>` : nothing}
+              <h3>${this.t("pending_settings")}</h3>
               ${this._map.roles.program ? this._select(this._map.roles.program, this.t("pending")) : nothing}
               ${this._map.parameters.map((entry) => this._select(entry.entity_id, this._label(entry)))}
+              ${
+                this._map.runningParameters.some((entry) =>
+                  selectable(this.hass.states[entry.entity_id]),
+                )
+                  ? html`<h3>${this.t("running_settings")}</h3>
+                      ${this._map.runningParameters.filter((entry) => selectable(this.hass.states[entry.entity_id])).map((entry) => this._select(entry.entity_id, this._label(entry)))}`
+                  : nothing
+              }
               ${
                 this._config.show_settings
                   ? html`<h3>${this.t("settings")}</h3>
@@ -546,6 +595,13 @@ export class MinijCard extends LitElement {
               <p>
                 ${this._dialog === "start" ? html`${this._display(this._state("program"))} · ` : nothing}${this.t(`confirm_${this._dialog}`)}
               </p>
+              ${
+                this._dialog === "start"
+                  ? html`<ul>
+                      ${this._map.parameters.map((entry) => html`<li>${this._label(entry)}：${this._display(this.hass.states[entry.entity_id])}</li>`)}
+                    </ul>`
+                  : nothing
+              }
               <div class="buttons">
                 <button @click=${() => this._finishConfirmation(false)}>
                   ${this.t("cancel")}</button

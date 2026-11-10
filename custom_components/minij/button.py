@@ -215,6 +215,8 @@ class MinijStartProgramButton(MinijProgramControl, ButtonEntity):
 
     async def async_press(self) -> None:
         origin_id = self.controls.data.current_id if self.controls.data else None
+        signature = self.controls.pending_signature()
+        revision = self.controls.draft_revision
         async with self.controls.command_lock:
             await self._fresh()
             if self.controls.data.current_id != origin_id:
@@ -226,9 +228,18 @@ class MinijStartProgramButton(MinijProgramControl, ButtonEntity):
                     translation_domain=DOMAIN,
                     translation_key="program_option_unavailable",
                 )
+            if (
+                revision != self.controls.draft_revision
+                or signature != self.controls.pending_signature()
+            ):
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="program_parameters_changed",
+                )
             await self._send(
-                self.coordinator.client.async_activate_program,
+                self.coordinator.client.async_start_program,
                 self.device_id,
                 origin_id,
+                self.controls.start_parameters(),
             )
             # ACK means cloud acceptance; normal status polling supplies cycle state.

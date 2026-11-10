@@ -398,8 +398,28 @@ class MinijClient:
         return program_id
 
     async def async_activate_program(self, device_id: str, program_id: str) -> None:
-        """Start or resume with the App's observed empty parameter list, once."""
+        """Resume the actual running program without applying a pending draft."""
         await self._program_command(device_id, program_id, "activate")
+
+    async def async_start_program(
+        self, device_id: str, program_id: str, parameters: list[dict[str, str]]
+    ) -> None:
+        """Start once with the App's observed explicit parameter-list contract."""
+        if not isinstance(parameters, list):
+            raise MinijError("Invalid start parameters")
+        codes, identifiers = set(), set()
+        for item in parameters:
+            if (
+                not isinstance(item, dict)
+                or set(item) != {"userDeviceModeStatsId", "code", "value"}
+                or any(not isinstance(v, str) or not v for v in item.values())
+                or item["code"] in codes
+                or item["userDeviceModeStatsId"] in identifiers
+            ):
+                raise MinijError("Invalid start parameters")
+            codes.add(item["code"])
+            identifiers.add(item["userDeviceModeStatsId"])
+        await self._program_command(device_id, program_id, "activate", parameters)
 
     async def async_pause_program(self, device_id: str, program_id: str) -> None:
         """Pause the identified running program with one observed request."""
@@ -415,7 +435,11 @@ class MinijClient:
         )
 
     async def _program_command(
-        self, device_id: str, program_id: str, operation: str
+        self,
+        device_id: str,
+        program_id: str,
+        operation: str,
+        parameters: list[dict[str, str]] | None = None,
     ) -> None:
         """Share the exact App payload for activation and pause."""
         if any(
@@ -431,7 +455,9 @@ class MinijClient:
                 "operateType": operation,
                 "activateParam": {
                     "userDeviceModeId": program_id,
-                    "userDeviceModeStatsSimpleList": [],
+                    "userDeviceModeStatsSimpleList": parameters
+                    if parameters is not None
+                    else [],
                 },
             },
         )
@@ -460,6 +486,12 @@ class MinijClient:
             "result": "pending",
         }
         self.command_history.append(record)
+        if body.get("activateParam", {}).get("userDeviceModeStatsSimpleList"):
+            # Parameter identifiers and program identifiers never enter diagnostics.
+            record["parameters"] = [
+                {"code": item["code"], "value": item["value"]}
+                for item in body["activateParam"]["userDeviceModeStatsSimpleList"]
+            ]
         started = monotonic()
         try:
             await self._request("POST", route, body)

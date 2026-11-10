@@ -1,7 +1,8 @@
 # 程序保存参数与启动覆盖研究
 
 更新于 2026-11-07。对应 [Issue #29](https://github.com/ajaxjiang96/ha-minij/issues/29)。
-本记录区分社区客户端反馈、V6-XNB 历史读取和 Android App 静态路径；不改变集成控制行为。
+本记录区分社区客户端反馈、V6-XNB 历史读取和 Android App 静态路径。
+后续源码已实现[参数草稿与启动提交](pending-parameters.md)，尚未发布或实机验收；以下控制描述保留取证当时的版本背景。
 最新进展：已从独立离线模拟器内存恢复业务 DEX，并由 App 模型和 Rust 核心离线生成五种合成请求，
 确认启动列表的字段结构和独立详情参数路径。随后经所有者授权，仅在待机状态核对参数接口：
 请求被接受，但三次读取均未观察到保存值变化，最终原值已确认；启动覆盖是否保留默认值仍待验证。
@@ -44,7 +45,7 @@
 以及命令预读后采用新元数据的枚举和参数身份；均使用模拟客户端，不连接真实设备。
 此类解析／选择测试不替代 U10 Pro 的 HA 安装与实际控制验收。
 
-## 当前启动与参数写入
+## 取证时的启动与参数写入
 
 集成的 `MinijClient._program_command` 发送 `device/v2/deviceOperate`：
 
@@ -198,7 +199,7 @@ Google APIs ARM64 v8a revision 7 环境，包名为
 | --- | --- | --- |
 | 程序详情参数设置 | `StatsSetup` → `device/deviceStatsSetup`，`deviceId` + `activateParam`（程序 ID 与参数列表） | 修改烘干选项并非只有本地草稿；持久化语义尚未实测 |
 | 启动／继续 | `DeviceOperate` 或 `DeviceOperateV2` → 已有 `deviceOperate` 路径，启动参数含列表 | 列表可非空；服务端是否写回保存设置仍未知 |
-| 运行面板单参数设置 | `SwitchUserStats` → 既有 `device/v2/workingUserStatsSetup` | 当前 HA 参数选择使用此路径；不能据接口名字断定永久或临时 |
+| 运行面板单参数设置 | `SwitchUserStats` → 既有 `device/v2/workingUserStatsSetup` | 取证时的 HA 参数选择使用此路径；不能据接口名字断定永久或临时 |
 
 因此不应把“App 详情页修改烘干”和“运行中叠加烘干”当成同一操作。
 **恢复了参数字段，不等于已经证明不改默认值的一次性覆盖。**

@@ -18,7 +18,11 @@ from custom_components.minij.programs import (
     parse_programs,
     program_coordinator,
 )
-from custom_components.minij.select import MinijParameterSelect, MinijProgramSelect
+from custom_components.minij.select import (
+    MinijParameterSelect,
+    MinijProgramSelect,
+    MinijRunningParameterSelect,
+)
 
 PROGRAM_A = {
     "id": "synthetic-program-a",
@@ -72,6 +76,7 @@ async def controls(hass):  # noqa: F811
         async_get_programs=AsyncMock(return_value=programs()),
         async_get_program_parameters=AsyncMock(return_value=parameters()),
         async_set_running_parameter=AsyncMock(),
+        async_get_running_program=AsyncMock(return_value=PROGRAM_A["id"]),
     )
     parent = SimpleNamespace(
         hass=hass,
@@ -200,7 +205,7 @@ async def test_program_command_and_parameter_ranges_follow_refreshed_program(con
 async def test_parameter_uses_current_metadata_value_and_id_without_operating_gates(
     controls,
 ):
-    entity = entity_for(controls, True)
+    entity = await running_entity(controls)
 
     async def write(device_id, parameter_id, code, value):
         assert (device_id, parameter_id, code, value) == (
@@ -221,6 +226,7 @@ async def test_parameter_uses_current_metadata_value_and_id_without_operating_ga
     assert controls.parent.client.async_set_running_parameter.await_count == 1
 
 
+@pytest.mark.parametrize("context", ["pending", "running"])
 @pytest.mark.parametrize(
     ("fixture_name", "label", "expected_value"),
     [
@@ -231,7 +237,7 @@ async def test_parameter_uses_current_metadata_value_and_id_without_operating_ga
     ],
 )
 async def test_drying_select_uses_device_options_including_zero(
-    controls, fixture_name, label, expected_value
+    controls, fixture_name, label, expected_value, context
 ):
     """Community metadata validates mapping, not U10 Pro hardware support."""
     raw = deepcopy(DRYING_PARAMETERS[fixture_name])
@@ -239,8 +245,15 @@ async def test_drying_select_uses_device_options_including_zero(
         raw["value"] = 2
     client = controls.parent.client
     client.async_get_program_parameters.return_value = parameters([raw])
+    if context == "running":
+        controls.parent.data[controls.device_id]["deviceCharacterMap"][
+            "current_status_alias"
+        ] = "working"
     await controls.async_refresh()
-    entity = MinijParameterSelect(
+    entity_type = (
+        MinijRunningParameterSelect if context == "running" else MinijParameterSelect
+    )
+    entity = entity_type(
         controls.parent, controls.device_id, controls, "dryingCompoundOption"
     )
     entity.hass = controls.hass
@@ -253,9 +266,19 @@ async def test_drying_select_uses_device_options_including_zero(
 
     client.async_set_running_parameter.side_effect = write
     await entity.async_select_option(label)
-    client.async_set_running_parameter.assert_awaited_once_with(
-        controls.device_id, raw["id"], "dryingCompoundOption", expected_value
-    )
+    if context == "running":
+        client.async_set_running_parameter.assert_awaited_once_with(
+            controls.device_id, raw["id"], "dryingCompoundOption", expected_value
+        )
+    else:
+        client.async_set_running_parameter.assert_not_awaited()
+        assert controls.start_parameters() == [
+            {
+                "userDeviceModeStatsId": raw["id"],
+                "code": "dryingCompoundOption",
+                "value": str(expected_value),
+            }
+        ]
     assert entity.current_option == label
 
 
@@ -284,9 +307,9 @@ async def test_drying_mapping_uses_fresh_options_and_parameter_identity(controls
 
     client.async_set_running_parameter.side_effect = write
     await entity.async_select_option("30分钟")
-    client.async_set_running_parameter.assert_awaited_once_with(
-        controls.device_id, raw["id"], "dryingCompoundOption", 5
-    )
+    client.async_set_running_parameter.assert_not_awaited()
+    assert controls.start_parameters()[0]["value"] == "5"
+    assert controls.start_parameters()[0]["userDeviceModeStatsId"] == raw["id"]
     assert "特干" in entity.options
     assert entity.current_option == "30分钟"
 
@@ -335,7 +358,7 @@ async def test_program_failure_does_not_hide_parent_and_diagnostics_are_cache_on
 
 
 async def test_no_optimistic_parameter_change_and_no_write_retry(controls):
-    entity = entity_for(controls, True)
+    entity = await running_entity(controls)
     with patch(
         "custom_components.minij.programs.sleep", new_callable=AsyncMock
     ) as pause:
@@ -454,7 +477,7 @@ async def test_parameter_queued_behind_program_switch_keeps_origin(controls):
 
 
 async def test_parameter_unloaded_during_confirmation_does_not_confirm(controls):
-    entity = entity_for(controls, True)
+    entity = await running_entity(controls)
     client = controls.parent.client
 
     async def command(*args):
@@ -478,3 +501,81 @@ async def test_program_coordinator_reuses_existing_cache_across_platforms(contro
     assert program_coordinator(controls.parent, controls.device_id) is controls
     assert program_coordinator(controls.parent, controls.device_id) is controls
     assert controls.parent.program_controls == {controls.device_id: controls}
+
+
+async def running_entity(controls):
+    controls.parent.data[controls.device_id]["deviceCharacterMap"][
+        "current_status_alias"
+    ] = "working"
+    await controls.async_refresh()
+    entity = MinijRunningParameterSelect(
+        controls.parent, controls.device_id, controls, PARAMETER["code"]
+    )
+    entity.hass = controls.hass
+    entity._active = True
+    return entity
+
+
+async def test_explicit_zero_draft_survives_refresh_and_uses_latest_identity(controls):
+    entity = entity_for(controls, True)
+    await entity.async_select_option("不加热")
+    raw = deepcopy(PARAMETER)
+    raw.update(id="synthetic-new-id", value=2)
+    controls.parent.client.async_get_program_parameters.return_value = parameters([raw])
+    await controls.async_refresh()
+    assert entity.current_option == "不加热"
+    assert controls.start_parameters() == [
+        {"userDeviceModeStatsId": raw["id"], "code": raw["code"], "value": "0"}
+    ]
+    controls.parent.client.async_set_running_parameter.assert_not_awaited()
+    await controls.async_select_draft(PROGRAM_B["id"])
+    assert controls.data.draft_choices == ()
+    assert entity.current_option == "30℃"
+
+
+async def test_removed_explicit_option_blocks_start_instead_of_silently_dropping(
+    controls,
+):
+    entity = entity_for(controls, True)
+    await entity.async_select_option("30℃")
+    controls.parent.client.async_get_program_parameters.return_value = parameters([])
+    await controls.async_refresh()
+    with pytest.raises(HomeAssistantError) as error:
+        controls.start_parameters()
+    assert error.value.translation_key == "program_parameters_changed"
+
+
+async def test_running_parameter_is_independent_of_pending_program(controls):
+    entity = await running_entity(controls)
+    await controls.async_select_draft(PROGRAM_B["id"])
+
+    async def read(device_id, program_id):
+        raw = deepcopy(PARAMETER)
+        raw["id"] = "running-id" if program_id == PROGRAM_A["id"] else "pending-id"
+        raw["value"] = (
+            2 if controls.parent.client.async_set_running_parameter.await_count else 0
+        )
+        return parameters([raw])
+
+    controls.parent.client.async_get_program_parameters.side_effect = read
+    await entity.async_select_option("30℃")
+    controls.parent.client.async_set_running_parameter.assert_awaited_once_with(
+        controls.device_id, "running-id", PARAMETER["code"], 2
+    )
+    assert controls.data.current_id == PROGRAM_B["id"]
+    assert controls.data.running_id == PROGRAM_A["id"]
+    controls.parent.data[controls.device_id]["deviceCharacterMap"][
+        "current_status_alias"
+    ] = "resting"
+    await controls.async_refresh()
+    assert not entity.available
+
+
+async def test_device_removed_during_parameter_read_fails_cleanly(controls):
+    async def removed(*args):
+        controls.parent.data.clear()
+        return parameters()
+
+    controls.parent.client.async_get_program_parameters.side_effect = removed
+    await controls.async_refresh()
+    assert not controls.last_update_success
