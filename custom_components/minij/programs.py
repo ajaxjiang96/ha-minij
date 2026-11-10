@@ -281,7 +281,9 @@ class MinijProgramCoordinator(DataUpdateCoordinator[ProgramState]):
             )
         result = []
         for parameter in self.data.parameters:
-            if not parameter.options:
+            if not parameter.options and parameter.code not in dict(
+                self.data.draft_choices
+            ):
                 continue
             label = self.pending_label(parameter.code)
             if label is None:

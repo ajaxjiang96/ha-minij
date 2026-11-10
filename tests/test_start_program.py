@@ -200,3 +200,37 @@ async def test_start_rejects_fresh_default_change(start_button):
         await start_button.async_press()
     assert error.value.translation_key == "program_parameters_changed"
     controls.parent.client.async_start_program.assert_not_awaited()
+
+
+@pytest.mark.parametrize("refresh_before_press", [False, True])
+@pytest.mark.parametrize("label", ["无烘干", "即穿"])
+async def test_start_rejects_explicit_draft_when_options_become_empty(
+    start_button, refresh_before_press, label
+):
+    """A pre-refreshed empty enum must not silently remove an explicit choice."""
+    controls = start_button.controls
+    raw = {
+        "id": "synthetic-drying-parameter",
+        "code": "dryingCompoundOption",
+        "name": "烘干",
+        "type": "choose",
+        "value": 0,
+        "optionalValueList": [
+            {"label": "无烘干", "value": 0},
+            {"label": "即穿", "value": 2},
+        ],
+    }
+    client = controls.parent.client
+    client.async_get_program_parameters.return_value = parameters([raw])
+    await controls.async_refresh()
+    controls.select_parameter(raw["code"], label)
+    raw["optionalValueList"] = []
+    client.async_get_program_parameters.return_value = parameters([raw])
+    if refresh_before_press:
+        await controls.async_refresh()
+    with pytest.raises(HomeAssistantError) as error:
+        await start_button.async_press()
+    assert error.value.translation_key == "program_parameters_changed"
+    assert dict(controls.data.draft_choices)[raw["code"]] == label
+    client.async_start_program.assert_not_awaited()
+    client.async_power_on.assert_not_awaited()
