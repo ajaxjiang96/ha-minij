@@ -1,0 +1,20 @@
+start_program:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          filter:
+            - integration: minij
+              domain: button
+          multiple: false
+    program:
+      required: true
+      example: 日常洗
+      selector:
+        text:
+    parameters:
+      example:
+        dryingCompoundOption: 无烘干
+      selector:
+        object:

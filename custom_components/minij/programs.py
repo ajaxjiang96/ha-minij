@@ -140,6 +140,42 @@ def parse_parameters(data: Any) -> tuple[Parameter, ...]:
     return tuple(result)
 
 
+def build_start_parameters(
+    parameters: tuple[Parameter, ...], choices: dict[str, str]
+) -> list[dict[str, str]]:
+    """Resolve option labels against this program's metadata, never global enums."""
+    if choices.keys() - {parameter.code for parameter in parameters}:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="program_parameters_changed"
+        )
+    result = []
+    for parameter in parameters:
+        if not parameter.options and parameter.code not in choices:
+            continue
+        label = choices.get(parameter.code)
+        if label is None:
+            label = next(
+                (
+                    label
+                    for label, value in parameter.options
+                    if value == parameter.value
+                ),
+                None,
+            )
+        if label not in dict(parameter.options):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="program_parameters_changed"
+            )
+        result.append(
+            {
+                "userDeviceModeStatsId": parameter.id,
+                "code": parameter.code,
+                "value": str(dict(parameter.options)[label]),
+            }
+        )
+    return result
+
+
 class MinijProgramCoordinator(DataUpdateCoordinator[ProgramState]):
     """One device's metadata and a shared lock for program/parameter commands."""
 
@@ -272,33 +308,13 @@ class MinijProgramCoordinator(DataUpdateCoordinator[ProgramState]):
 
     def start_parameters(self) -> list[dict[str, str]]:
         """Build only from fresh selected-program metadata, preserving zero."""
-        if not self.data or any(
-            code not in {p.code for p in self.data.parameters}
-            for code, _ in self.data.draft_choices
-        ):
+        if self.data is None:
             raise ServiceValidationError(
                 translation_domain=DOMAIN, translation_key="program_parameters_changed"
             )
-        result = []
-        for parameter in self.data.parameters:
-            if not parameter.options and parameter.code not in dict(
-                self.data.draft_choices
-            ):
-                continue
-            label = self.pending_label(parameter.code)
-            if label is None:
-                raise ServiceValidationError(
-                    translation_domain=DOMAIN,
-                    translation_key="program_parameters_changed",
-                )
-            result.append(
-                {
-                    "userDeviceModeStatsId": parameter.id,
-                    "code": parameter.code,
-                    "value": str(dict(parameter.options)[label]),
-                }
-            )
-        return result
+        return build_start_parameters(
+            self.data.parameters, dict(self.data.draft_choices)
+        )
 
     def select_parameter(self, code: str, label: str) -> None:
         if not self.data:

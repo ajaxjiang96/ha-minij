@@ -32,6 +32,8 @@ def test_archive_installs_in_a_clean_homeassistant_directory(tmp_path):
             "config_flow.py",
             "diagnostics.py",
             "manifest.json",
+            "services.py",
+            "services.yaml",
             "translations/en.json",
             "translations/zh-Hans.json",
             "brand/icon.png",

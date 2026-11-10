@@ -1,4 +1,4 @@
-"""Read MiniJ appliance status through the MiniJ cloud."""
+"""Set up MiniJ cloud monitoring and explicit appliance controls."""
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -8,6 +8,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import MinijClient
 from .const import CONF_TOKEN, DOMAIN, PLATFORMS
 from .coordinator import MinijCoordinator
+from .services import async_setup_services
 
 type MinijConfigEntry = ConfigEntry[MinijCoordinator]
 
@@ -21,6 +22,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MinijConfigEntry) -> boo
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    async_setup_services(hass)
     return True
 
 

@@ -217,6 +217,29 @@
     },
     "program_parameters_changed": {
       "message": "Pending parameters changed or are incomplete. Review them before starting again."
+    },
+    "program_target_unavailable": {
+      "message": "Select the start-program button of one loaded MiniJ washer."
+    }
+  },
+  "services": {
+    "start_program": {
+      "name": "Start program with parameters (experimental)",
+      "description": "Submit a program and parameters once without changing local drafts, waking, or retrying. Success means cloud acceptance only; omitted parameters use current cloud values.",
+      "fields": {
+        "entity_id": {
+          "name": "Start button",
+          "description": "Select the Start pending program button of one washer."
+        },
+        "program": {
+          "name": "Program name",
+          "description": "Exact program name currently provided by the device."
+        },
+        "parameters": {
+          "name": "Parameter options",
+          "description": "Map parameter codes to device option labels, for example dryingCompoundOption: 无烘干."
+        }
+      }
     }
   }
 }
