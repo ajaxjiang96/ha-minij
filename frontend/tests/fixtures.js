@@ -30,7 +30,11 @@ export function fixture(status = "working") {
   add("sensor", "current_mode", "婴童");
   add("sensor", "current_process", "主洗");
   add("sensor", "program_remain_time", "57", { unit_of_measurement: "min" });
-  add("select", "program", "婴童", { options: ["婴童", "标准", "单烘干"] });
+  add("select", "program", "婴童", {
+    options: ["婴童", "标准", "单烘干"],
+    parameter_context: "pending",
+    draft_revision: 0,
+  });
   for (const key of [
     "wake",
     "start_program",
@@ -51,9 +55,20 @@ export function fixture(status = "working") {
     ["steamSterilization", "蒸汽除菌", "打开", ["关闭", "打开"]],
     ["UVCDownlights", "UVC筒灯", "打开", ["关闭", "打开"]],
   ]) {
-    const id = add("select", `parameter_${code}`, value, { options });
+    const id = add("select", `parameter_${code}`, value, {
+      options,
+      parameter_context: "pending",
+      draft_revision: 0,
+    });
     entries.at(-1).original_name = name;
     states[id].attributes.friendly_name = name;
+    add(
+      "select",
+      `running_parameter_${code}`,
+      ["working", "paused"].includes(status) ? value : "unavailable",
+      { options, parameter_context: "running" },
+    );
+    entries.at(-1).original_name = `运行中·${name}`;
   }
   const calls = [];
   const connection = { subscribeEvents: async () => () => {} };

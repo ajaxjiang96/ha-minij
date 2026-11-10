@@ -16,7 +16,7 @@
 | 继续（实验） | 暂停面板 activate + 实际运行程序 ID | 本轮诊断显示执行后上报工作中，剩余100→99分钟 |
 | 停止／关机（实验） | 停止确认与设备菜单均发送 power_off | 两个 App 入口载荷相同；所有者确认状态稍有延迟后正常回待机 |
 | 待启动程序 | 本机程序列表 + 目标程序参数读取 | 本地选择草稿，不发送设备命令；不同程序参数已只读核对 |
-| 洗涤水位、温度、漂洗次数、烘干、烘干强度、蒸汽除菌、UVC 筒灯 | 当前程序的 optionalValueList + workingUserStatsSetup | 22 程序只读发现参数并集 7 项；所有者确认本轮所测参数有效 |
+| 洗涤水位、温度、漂洗次数、烘干、烘干强度、蒸汽除菌、UVC 筒灯 | 所选程序的 optionalValueList；待启动草稿 + activate，运行中 workingUserStatsSetup | 22 程序只读发现参数并集 7 项；此前单参数控制有所有者反馈，当前批量启动待验收 |
 | 清洁提醒、托管（设备提供时）、提醒次数 | 智能清洁网页及本机元数据 | 本机提供提醒及 5–50 次的选项，托管字段为 null，App 隐藏 |
 | 立即筒清洁 | 网页 immediateExecBucketClean 原样参数 | 仅单次请求并记录云端接受；不将 ACK 说成机器已运行 |
 
@@ -32,12 +32,11 @@
 不会重发，也不把云端接受改成“运行中”。要只唤醒则单独按“唤醒（实验）”。
 程序草稿初值可能是云端目录保留的上次程序，启动前应明确选一次所需程序。
 
-本次观察到：联网只读加载完整标准程序详情后，断网点“立即运行”，
-`activateParam.userDeviceModeStatsSimpleList` 仍为 `[]`。本版复现这条“启动已保存程序”的路径，
-不拼接未经观察的参数映射。已有参数控制保留单参数写入；本轮与唤醒、启动一并经所有者确认有效；其他程序、枚举和状态仍按实际测试范围记录。
-2026-11-07 后续通过离线内存 DEX 恢复了 App 的非空启动列表与独立详情参数设置路径，
-见[程序参数研究](program-parameter-research.md)。这尚不证明服务端支持仅本次覆盖，
-当前集成仍使用本节描述的空启动列表及单参数设置，不因静态发现自动切换控制协议。
+此前版本按观察到的空列表启动路径发送 `activate`。当前源码（尚未发布）在离线恢复和原生链路核对后，
+改为将所选程序最新枚举参数构建为非空 `userDeviceModeStatsSimpleList`，包括值 `0`。
+待启动设置只保存在本地，运行中设置则绑定实际运行程序并使用单参数写入。
+完整行为和验证边界见[参数草稿指南](pending-parameters.md)与[协议研究](program-parameter-research.md)。
+批量启动的实际组合效果、是否改变云端保存默认值尚未实机验证，不沿用普通启动的验收结论。
 暂停与继续分别临时读取 `getRunningCurrentDeviceMode` 的 `id`，再发送 `pause` / `activate`，
 包含原生空参数列表；没有运行程序时不发送。它们不使用本地“待启动程序”。
 App 的运行面板停止方块经“即将停止”确认后，与菜单“关机”都发送 `power_off`，
@@ -76,13 +75,13 @@ App 的运行面板停止方块经“即将停止”确认后，与菜单“关�
 - 参数读取：GET device/v2/getUserDeviceMode（deviceId、所选程序 ID）；不能固定读目录旧 currentDeviceMode.id。
 - 选择草稿：只读目标程序参数并更新本地完整快照，无程序写入请求。
 - 唤醒：POST device/v2/deviceOperate，`{deviceId, bucketCode: "", operateType: "power_on"}`。
-- 启动：同一路径，`operateType: "activate"`，另带 `activateParam: {userDeviceModeId, userDeviceModeStatsSimpleList: []}`。
+- 启动：同一路径，`operateType: "activate"`，另带 `activateParam: {userDeviceModeId, userDeviceModeStatsSimpleList: [{userDeviceModeStatsId, code, value}]}`。
 - 实际运行程序：GET device/v2/getRunningCurrentDeviceMode（deviceId、空 bucketCode）；空闲可返回 null。
 - 暂停：POST device/v2/deviceOperate，`operateType: "pause"`，`activateParam` 的 `userDeviceModeId` 使用运行程序，参数列表为空。
-- 继续：同启动的 `activate` 载荷，但程序 ID 来自运行程序，不能来自草稿。
+- 继续：`activate` 载荷使用空参数列表，程序 ID 来自运行程序，不能来自草稿。
 - 停止／关机：POST device/v2/deviceOperate，`{deviceId, bucketCode: "", operateType: "power_off"}`，不带 activateParam。
-- 单参数写入：POST device/v2/workingUserStatsSetup，deviceId/basicFunction/value/userDeviceModeStatsId 均为字符串。
-- 批量 deviceStatsSetup 内部 map 键尚未确定，没有用猜测 map 取代单参数路径；是否在非运行状态接受由实际服务端结果核对。
+- 运行中单参数写入：POST device/v2/workingUserStatsSetup，deviceId/basicFunction/value/userDeviceModeStatsId 均为字符串。
+- 详情页 deviceStatsSetup 列表字段已由离线原生链路确认；待机回读未观察到保存值改变，因此当前源码不使用它保存草稿。
 - 智能清洁：GET device/getIntelligentBucketClean；POST device/switchBasicFunction、device/remindAfterCleanTimes、device/immediateExecBucketClean。
 - 立即清洁的 deviceModeId 原样来自元数据，包含本机的 null；网页本身仍显示按钮，是否执行需真实验收。
 

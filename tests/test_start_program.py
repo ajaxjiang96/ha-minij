@@ -9,6 +9,7 @@ import pytest
 from homeassistant.exceptions import HomeAssistantError
 from test_homeassistant import hass  # noqa: F401
 from test_programs import (
+    PARAMETER,
     PROGRAM_A,
     PROGRAM_B,
     parameters,
@@ -23,7 +24,7 @@ from custom_components.minij.button import MinijStartProgramButton
 @pytest.fixture
 def start_button(program_controls):  # noqa: F811
     controls = program_controls
-    controls.parent.client.async_activate_program = AsyncMock()
+    controls.parent.client.async_start_program = AsyncMock()
     controls.parent.client.async_power_on = AsyncMock()
     entity = MinijStartProgramButton(controls.parent, controls.device_id, controls)
     entity.hass = controls.hass
@@ -41,8 +42,16 @@ async def test_start_program_preflights_once_without_wake_or_optimistic_state(
     reads = client.async_get_program_parameters.await_count
     assert start_button.entity_registry_enabled_default is True
     await start_button.async_press()
-    client.async_activate_program.assert_awaited_once_with(
-        "synthetic-washer", PROGRAM_A["id"]
+    client.async_start_program.assert_awaited_once_with(
+        "synthetic-washer",
+        PROGRAM_A["id"],
+        [
+            {
+                "userDeviceModeStatsId": PARAMETER["id"],
+                "code": PARAMETER["code"],
+                "value": "0",
+            }
+        ],
     )
     controls.parent.async_refresh.assert_awaited_once()
     assert client.async_get_program_parameters.await_count == reads + 1
@@ -55,8 +64,16 @@ async def test_start_uses_local_draft_instead_of_old_cloud_catalog(start_button)
     controls = start_button.controls
     await controls.async_select_draft(PROGRAM_B["id"])
     await start_button.async_press()
-    controls.parent.client.async_activate_program.assert_awaited_once_with(
-        "synthetic-washer", PROGRAM_B["id"]
+    controls.parent.client.async_start_program.assert_awaited_once_with(
+        "synthetic-washer",
+        PROGRAM_B["id"],
+        [
+            {
+                "userDeviceModeStatsId": PARAMETER["id"],
+                "code": PARAMETER["code"],
+                "value": "0",
+            }
+        ],
     )
     assert controls.data.cloud_catalog_current_id == PROGRAM_A["id"]
     assert controls.data.current_id == PROGRAM_B["id"]
@@ -73,7 +90,7 @@ async def test_start_rejects_program_change_while_waiting_for_shared_lock(start_
     with pytest.raises(HomeAssistantError) as error:
         await task
     assert error.value.translation_key == "program_changed"
-    controls.parent.client.async_activate_program.assert_not_awaited()
+    controls.parent.client.async_start_program.assert_not_awaited()
     controls.parent.client.async_power_on.assert_not_awaited()
 
 
@@ -83,7 +100,7 @@ async def test_start_rejects_program_changed_by_fresh_metadata(start_button):
     with pytest.raises(HomeAssistantError) as error:
         await start_button.async_press()
     assert error.value.translation_key == "program_changed"
-    controls.parent.client.async_activate_program.assert_not_awaited()
+    controls.parent.client.async_start_program.assert_not_awaited()
 
 
 async def test_start_requires_a_current_program_without_inventing_one(start_button):
@@ -93,7 +110,7 @@ async def test_start_requires_a_current_program_without_inventing_one(start_butt
     with pytest.raises(HomeAssistantError) as error:
         await start_button.async_press()
     assert error.value.translation_key == "program_option_unavailable"
-    controls.parent.client.async_activate_program.assert_not_awaited()
+    controls.parent.client.async_start_program.assert_not_awaited()
 
 
 async def test_inactive_start_does_not_read_or_send(start_button):
@@ -103,7 +120,7 @@ async def test_inactive_start_does_not_read_or_send(start_button):
         await start_button.async_press()
     assert error.value.translation_key == "control_read_failed"
     start_button.controls.parent.async_refresh.assert_not_awaited()
-    start_button.controls.parent.client.async_activate_program.assert_not_awaited()
+    start_button.controls.parent.client.async_start_program.assert_not_awaited()
 
 
 async def test_start_unloaded_during_metadata_read_does_not_send(start_button):
@@ -117,7 +134,7 @@ async def test_start_unloaded_during_metadata_read_does_not_send(start_button):
     with pytest.raises(HomeAssistantError) as error:
         await start_button.async_press()
     assert error.value.translation_key == "control_read_failed"
-    controls.parent.client.async_activate_program.assert_not_awaited()
+    controls.parent.client.async_start_program.assert_not_awaited()
 
 
 @pytest.mark.parametrize("kind", ["auth", "rate", "uncertain"])
@@ -129,15 +146,91 @@ async def test_start_failure_is_private_and_never_retried(start_button, kind):
         "rate": (MinijRateLimitError, "control_rate_limited"),
         "uncertain": (MinijError, "control_send_uncertain"),
     }[kind]
-    controls.parent.client.async_activate_program.side_effect = exception(
-        "private-canary"
-    )
+    controls.parent.client.async_start_program.side_effect = exception("private-canary")
     with pytest.raises(HomeAssistantError) as error:
         await start_button.async_press()
     assert error.value.translation_key == translation
     assert "private-canary" not in str(error.value)
-    controls.parent.client.async_activate_program.assert_awaited_once()
+    controls.parent.client.async_start_program.assert_awaited_once()
     controls.parent.client.async_power_on.assert_not_awaited()
     assert controls.parent.config_entry.async_start_reauth.call_count == (
         kind == "auth"
     )
+
+
+async def test_start_keeps_explicit_zero_and_maps_fresh_option_identity(start_button):
+    controls = start_button.controls
+    controls.select_parameter(PARAMETER["code"], "不加热")
+    raw = deepcopy(PARAMETER)
+    raw.update(id="fresh-id", value=2)
+    raw["optionalValueList"][0]["value"] = 7
+    controls.parent.client.async_get_program_parameters.return_value = parameters([raw])
+    await start_button.async_press()
+    controls.parent.client.async_start_program.assert_awaited_once_with(
+        "synthetic-washer",
+        PROGRAM_A["id"],
+        [
+            {
+                "userDeviceModeStatsId": "fresh-id",
+                "code": PARAMETER["code"],
+                "value": "7",
+            }
+        ],
+    )
+
+
+async def test_start_rejects_parameter_change_during_lock_wait(start_button):
+    controls = start_button.controls
+    async with controls.command_lock:
+        queued = asyncio.create_task(start_button.async_press())
+        await asyncio.sleep(0)
+        controls.select_parameter(PARAMETER["code"], "30℃")
+    with pytest.raises(HomeAssistantError) as error:
+        await queued
+    assert error.value.translation_key == "program_parameters_changed"
+    controls.parent.client.async_start_program.assert_not_awaited()
+
+
+async def test_start_rejects_fresh_default_change(start_button):
+    controls = start_button.controls
+    raw = deepcopy(PARAMETER)
+    raw["value"] = 2
+    controls.parent.client.async_get_program_parameters.return_value = parameters([raw])
+    with pytest.raises(HomeAssistantError) as error:
+        await start_button.async_press()
+    assert error.value.translation_key == "program_parameters_changed"
+    controls.parent.client.async_start_program.assert_not_awaited()
+
+
+@pytest.mark.parametrize("refresh_before_press", [False, True])
+@pytest.mark.parametrize("label", ["无烘干", "即穿"])
+async def test_start_rejects_explicit_draft_when_options_become_empty(
+    start_button, refresh_before_press, label
+):
+    """A pre-refreshed empty enum must not silently remove an explicit choice."""
+    controls = start_button.controls
+    raw = {
+        "id": "synthetic-drying-parameter",
+        "code": "dryingCompoundOption",
+        "name": "烘干",
+        "type": "choose",
+        "value": 0,
+        "optionalValueList": [
+            {"label": "无烘干", "value": 0},
+            {"label": "即穿", "value": 2},
+        ],
+    }
+    client = controls.parent.client
+    client.async_get_program_parameters.return_value = parameters([raw])
+    await controls.async_refresh()
+    controls.select_parameter(raw["code"], label)
+    raw["optionalValueList"] = []
+    client.async_get_program_parameters.return_value = parameters([raw])
+    if refresh_before_press:
+        await controls.async_refresh()
+    with pytest.raises(HomeAssistantError) as error:
+        await start_button.async_press()
+    assert error.value.translation_key == "program_parameters_changed"
+    assert dict(controls.data.draft_choices)[raw["code"]] == label
+    client.async_start_program.assert_not_awaited()
+    client.async_power_on.assert_not_awaited()

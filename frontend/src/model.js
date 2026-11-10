@@ -32,7 +32,8 @@ export function discover(entries, entity) {
   const prefix =
     source.unique_id.slice(0, -"_current_status_alias".length) + "_";
   const roles = {},
-    parameters = [];
+    parameters = [],
+    runningParameters = [];
   for (const entry of entries) {
     if (
       entry.device_id !== source.device_id ||
@@ -48,8 +49,13 @@ export function discover(entries, entity) {
       entry.entity_id.startsWith("select.")
     )
       parameters.push(entry);
+    if (
+      /^running_parameter_[a-zA-Z0-9]+$/.test(key) &&
+      entry.entity_id.startsWith("select.")
+    )
+      runningParameters.push(entry);
   }
-  return { roles, parameters, deviceId: source.device_id };
+  return { roles, parameters, runningParameters, deviceId: source.device_id };
 }
 export function available(state) {
   return !!state && !["unknown", "unavailable"].includes(state.state);

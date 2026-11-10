@@ -152,6 +152,12 @@
       },
       "cleaning_threshold": {
         "name": "Drum cleaning reminder interval"
+      },
+      "pending_parameter": {
+        "name": "Pending {parameter}"
+      },
+      "running_parameter": {
+        "name": "Running {parameter}"
       }
     },
     "button": {
@@ -208,6 +214,9 @@
     },
     "control_no_running_program": {
       "message": "No current running program was found; no command was sent. Check the MiniJ App before trying again."
+    },
+    "program_parameters_changed": {
+      "message": "Pending parameters changed or are incomplete. Review them before starting again."
     }
   }
 }

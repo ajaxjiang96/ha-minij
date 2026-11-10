@@ -152,6 +152,12 @@
       },
       "cleaning_threshold": {
         "name": "筒清洁提醒运行次数"
+      },
+      "pending_parameter": {
+        "name": "待启动·{parameter}"
+      },
+      "running_parameter": {
+        "name": "运行中·{parameter}"
       }
     },
     "button": {
@@ -208,6 +214,9 @@
     },
     "control_no_running_program": {
       "message": "未读取到当前运行程序，未发送指令。请在小吉 App 确认状态后重试。"
+    },
+    "program_parameters_changed": {
+      "message": "待启动参数已变化或尚未完整选择，请核对后重新启动。"
     }
   }
 }
